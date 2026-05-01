@@ -12,11 +12,12 @@ import shutil
 import tempfile
 import zipfile
 
-import config
-from packer.apk import create_debug_keystore, inject_encrypted_dex, sign_apk, zipalign
-from packer.crypto import encrypt_dex, generate_key
-from packer.manifest import patch_manifest
-from packer.stub_dex import get_stub_dex
+from fuin import config
+from fuin.apk import create_debug_keystore, inject_encrypted_dex, sign_apk, zipalign
+from fuin.cli import get_package_name
+from fuin.crypto import encrypt_dex, generate_key
+from fuin.manifest import patch_manifest
+from fuin.stub_dex import get_stub_dex
 
 log = logging.getLogger(__name__)
 
@@ -33,8 +34,6 @@ def analyze_apk(apk_path: str) -> dict:
     with zipfile.ZipFile(apk_path, "r") as z:
         names = z.namelist()
         has_dex = "classes.dex" in names
-
-    from packer.main import get_package_name
 
     return {
         "package_name": get_package_name(apk_path),

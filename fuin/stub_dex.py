@@ -3,7 +3,7 @@ Build or locate the pre-compiled stub DEX.
 
 Strategy (in order):
 1. If FUIN_STUB_DEX env var points to an existing .dex file, use it.
-2. If a pre-built stub.dex exists next to this file (packer/stub.dex), use it.
+2. If a pre-built stub.dex exists next to this file (fuin/stub.dex), use it.
 3. Build from source: run `./gradlew assembleRelease` in stub/, then extract
    classes.jar from the AAR and convert with d8.
 """
@@ -18,9 +18,9 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-PACKER_DIR = Path(__file__).parent
-STUB_DIR = PACKER_DIR.parent / "stub"
-PREBUILT_DEX = PACKER_DIR / "stub.dex"
+FUIN_DIR = Path(__file__).parent
+STUB_DIR = FUIN_DIR.parent / "stub"
+PREBUILT_DEX = FUIN_DIR / "stub.dex"
 
 
 def get_stub_dex() -> bytes:
@@ -43,7 +43,7 @@ def _build_stub_dex() -> bytes:
     if not gradlew.is_file():
         raise FileNotFoundError(
             f"Cannot find {gradlew}. Either pre-build the stub and place stub.dex "
-            f"next to packer/stub_dex.py, or set FUIN_STUB_DEX to its path."
+            f"at fuin/stub.dex, or set FUIN_STUB_DEX to its path."
         )
 
     log.info("building stub AAR with Gradle")
@@ -61,7 +61,6 @@ def _build_stub_dex() -> bytes:
         raise FileNotFoundError(f"Expected AAR at {aar_path} — check Gradle output")
 
     dex_bytes = _aar_to_dex(str(aar_path))
-
     PREBUILT_DEX.write_bytes(dex_bytes)
     log.info("stub.dex cached at %s", PREBUILT_DEX)
     return dex_bytes

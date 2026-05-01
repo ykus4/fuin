@@ -1,11 +1,11 @@
 """
-fuin Key Management Server (FastAPI).
+fuin Packer Server (FastAPI).
 
 Endpoints:
-  POST /pack                   — Upload APK → pack → return app_id
-  GET  /apps/{app_id}/download — Download the packed APK
-  GET  /apps                   — List all registered apps
-  DELETE /apps/{app_id}        — Delete a registered app
+  POST   /pack                   — Upload APK → pack → return app_id
+  GET    /apps/{app_id}/download — Download the packed APK
+  GET    /apps                   — List all packed apps
+  DELETE /apps/{app_id}          — Delete a packed app
 """
 
 import logging
@@ -18,10 +18,10 @@ from database import App, init_db, make_engine, make_get_session
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from models import AppInfo, PackResult
-from packer_pipeline import analyze_apk, run_pipeline
+from pipeline import analyze_apk, run_pipeline
 from sqlalchemy.orm import Session
 
-import config
+from fuin import config
 
 log = logging.getLogger(__name__)
 

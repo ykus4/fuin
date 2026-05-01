@@ -73,13 +73,13 @@ only ciphertext, not runnable bytecode.
 
 ```
 fuin/
-├── config.py               # Shared config (env vars / .env)
 ├── .env.example            # Template — copy to .env and fill in values
 ├── pyproject.toml          # uv project — all Python dependencies
 ├── .pre-commit-config.yaml # ruff lint/format + general checks
 │
-├── packer/                 # Python packer (CLI + library)
-│   ├── main.py             # CLI entry point  (fuin-pack)
+├── fuin/                   # Python packer library + CLI
+│   ├── config.py           # Shared config (env vars / .env)
+│   ├── cli.py              # CLI entry point  (fuin-pack)
 │   ├── crypto.py           # AES-256-GCM encrypt / decrypt
 │   ├── manifest.py         # Binary AXML patcher
 │   ├── apk.py              # APK repack, zipalign, apksigner
@@ -89,7 +89,7 @@ fuin/
 │   ├── main.py             # HTTP endpoints  (fuin-server)
 │   ├── database.py         # SQLAlchemy / SQLite
 │   ├── models.py           # Pydantic request/response models
-│   └── packer_pipeline.py  # Server-side pack pipeline
+│   └── pipeline.py         # Server-side pack pipeline
 │
 └── stub/                   # Android stub (Kotlin, minSdk 24)
     └── app/src/main/java/com/fuin/stub/
@@ -173,7 +173,7 @@ uv run fuin-pack pack input.apk output_protected.apk
 The packer needs a compiled stub DEX. Resolution order:
 
 1. `FUIN_STUB_DEX=/path/to/stub.dex` env var
-2. `packer/stub.dex` pre-built artifact
+2. `fuin/stub.dex` pre-built artifact
 3. Auto-build via `stub/gradlew assembleRelease` + `d8` (requires `ANDROID_HOME`)
 
 ## Server API
@@ -191,4 +191,4 @@ All endpoints require `X-API-Key` header.
 
 - The AES key is stored inside the APK (`assets/key.bin`). This protects against **static analysis** but not against a determined attacker with a rooted device who can read app assets at runtime.
 - Use a real signing keystore (`FUIN_KEYSTORE_*`) for release builds — the debug keystore is for testing only.
-- The binary AXML patcher in `manifest.py` is best-effort. For production, use [apktool](https://apktool.org/) or [androguard](https://github.com/androguard/androguard).
+- The binary AXML patcher in `fuin/manifest.py` is best-effort. For production, use [apktool](https://apktool.org/) or [androguard](https://github.com/androguard/androguard).
