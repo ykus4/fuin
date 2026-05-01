@@ -22,6 +22,7 @@ stub/.gradle/
 stub/build/
 stub/app/build/
 stub/local.properties
+stub/gradle.properties
 *.keystore
 *.jks
 
