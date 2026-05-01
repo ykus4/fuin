@@ -26,5 +26,8 @@ stub/gradle.properties
 *.keystore
 *.jks
 
+# Large binary deps for local Docker builds on corporate networks (never commit)
+.docker-deps/
+
 # macOS
 .DS_Store
