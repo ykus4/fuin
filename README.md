@@ -77,22 +77,21 @@ fuin/
 ├── pyproject.toml          # uv project — all Python dependencies
 ├── .pre-commit-config.yaml # ruff lint/format + general checks
 │
-├── fuin/                   # Python packer library + CLI
+├── fuin/                   # Python package (packer library + CLI + server)
 │   ├── config.py           # Shared config (env vars / .env)
 │   ├── cli.py              # CLI entry point  (fuin-pack)
 │   ├── crypto.py           # AES-256-GCM encrypt / decrypt
 │   ├── manifest.py         # Binary AXML patcher
 │   ├── apk.py              # APK repack, zipalign, apksigner
-│   └── stub_dex.py         # Stub DEX builder / locator
-│
-├── server/                 # FastAPI packer server
-│   ├── main.py             # HTTP endpoints  (fuin-server)
-│   ├── database.py         # SQLAlchemy / SQLite
-│   ├── models.py           # Pydantic request/response models
-│   ├── pipeline.py         # Server-side pack pipeline (with progress callbacks)
-│   ├── jobs.py             # In-memory async job store (SSE progress)
-│   └── static/
-│       └── index.html      # Web UI (drag-and-drop, progress bar, app list)
+│   ├── stub_dex.py         # Stub DEX builder / locator
+│   └── server/             # FastAPI packer server
+│       ├── main.py         # HTTP endpoints  (fuin-server)
+│       ├── database.py     # SQLAlchemy / SQLite
+│       ├── models.py       # Pydantic request/response models
+│       ├── pipeline.py     # Pack pipeline (with progress callbacks)
+│       ├── jobs.py         # In-memory async job store (SSE progress)
+│       └── static/
+│           └── index.html  # Web UI (drag-and-drop, progress bar, app list)
 │
 └── stub/                   # Android stub (Kotlin, minSdk 24)
     └── app/src/main/java/com/fuin/stub/

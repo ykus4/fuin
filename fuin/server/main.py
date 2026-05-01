@@ -25,10 +25,10 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from fuin import config
-from server.database import App, init_db, make_engine, make_get_session
-from server.jobs import JobStatus, create_job, get_job
-from server.models import AppInfo, PackResult
-from server.pipeline import analyze_apk, run_pipeline
+from fuin.server.database import App, init_db, make_engine, make_get_session
+from fuin.server.jobs import JobStatus, create_job, get_job
+from fuin.server.models import AppInfo, PackResult
+from fuin.server.pipeline import analyze_apk, run_pipeline
 
 log = logging.getLogger(__name__)
 
@@ -223,4 +223,4 @@ def run() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    uvicorn.run("server.main:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("fuin.server.main:app", host="0.0.0.0", port=8000, reload=False)

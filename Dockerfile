@@ -60,7 +60,6 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy source
 COPY fuin/ fuin/
-COPY server/ server/
 
 # Copy pre-built stub DEX from stage 1
 COPY --from=stub-builder /stub-dex/classes.dex fuin/stub.dex
