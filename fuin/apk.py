@@ -182,6 +182,7 @@ def sign_apk(apk_path: str, keystore: str, key_alias: str, store_pass: str, key_
     """
     apksigner_bin = _find_build_tool("apksigner")
     if Path(apksigner_bin).is_file():
+        env = _apksigner_env()
         result = subprocess.run(
             [
                 apksigner_bin,
@@ -198,11 +199,32 @@ def sign_apk(apk_path: str, keystore: str, key_alias: str, store_pass: str, key_
             ],
             capture_output=True,
             text=True,
+            env=env,
         )
+        # apksigner is a shell script — fall back to pure-Python if Java is unavailable
         if result.returncode != 0:
-            raise RuntimeError(f"apksigner failed:\n{result.stderr}")
+            if "Java Runtime" in result.stderr or "java" in result.stderr.lower():
+                _sign_apk_v1(apk_path, keystore, key_alias, store_pass)
+            else:
+                raise RuntimeError(f"apksigner failed:\n{result.stderr}")
     else:
         _sign_apk_v1(apk_path, keystore, key_alias, store_pass)
+
+
+def _apksigner_env() -> dict:
+    """Return an env dict with JAVA_HOME set to the Homebrew OpenJDK if not already set."""
+    env = os.environ.copy()
+    if "JAVA_HOME" not in env:
+        for candidate in [
+            "/opt/homebrew/opt/openjdk@17",
+            "/opt/homebrew/opt/openjdk",
+            "/usr/local/opt/openjdk@17",
+        ]:
+            if Path(candidate).is_dir():
+                env["JAVA_HOME"] = candidate
+                env["PATH"] = str(Path(candidate) / "bin") + ":" + env.get("PATH", "")
+                break
+    return env
 
 
 def _sign_apk_v1(apk_path: str, keystore_path: str, alias: str, password: str) -> None:
