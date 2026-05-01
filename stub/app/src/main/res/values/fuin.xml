@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- These values are injected by the packer at build time -->
+    <string name="fuin_server_url">https://your-key-server.example.com</string>
+    <string name="fuin_app_id">REPLACE_WITH_APP_ID</string>
+</resources>
