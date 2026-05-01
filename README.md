@@ -106,50 +106,75 @@ fuin/
 | Component | Requirement |
 |-----------|-------------|
 | packer / server | Python ≥ 3.12, [uv](https://github.com/astral-sh/uv) |
-| pack / sign | `zipalign`, `apksigner` on PATH (Android SDK build-tools) |
-| stub build | JDK 17+, Android SDK (build-tools ≥ 34), `ANDROID_HOME` set |
+| pack / sign | `zipalign`, `apksigner` (Android SDK build-tools ≥ 34) |
+| stub build | JDK 17+, Android SDK build-tools ≥ 34 |
+| debug signing | no extra deps — uses `cryptography` library (already installed) |
+
+> `zipalign` and `apksigner` are auto-discovered from `$ANDROID_HOME/build-tools/` or
+> `~/android-sdk/build-tools/` — no manual PATH configuration needed.
 
 ## Environment Setup
 
 ### 1. Install uv
 
 ```bash
-# macOS / Linux
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### 2. Install Android SDK (for zipalign / apksigner / stub build)
+### 2. Install Android SDK build-tools
 
-**macOS (Homebrew):**
+fuin needs `zipalign` and `apksigner` from Android build-tools.
+
+**macOS — recommended (no Android Studio required):**
+
 ```bash
-brew install --cask android-commandlinetools
-# then accept licenses
-yes | sdkmanager --licenses
-sdkmanager "build-tools;34.0.0"
+# Install OpenJDK 17 (needed for Gradle / stub build)
+brew install openjdk@17
+
+# Download build-tools 34 directly
+mkdir -p ~/android-sdk/build-tools
+curl -L "https://dl.google.com/android/repository/build-tools_r34-macosx.zip" \
+  -o /tmp/build-tools-34.zip
+unzip -q /tmp/build-tools-34.zip -d /tmp/bt34
+mv /tmp/bt34/android-14 ~/android-sdk/build-tools/34.0.0
+```
+
+fuin will automatically look for tools in `~/android-sdk/build-tools/`.
+To override, set `ANDROID_HOME` in your shell:
+
+```bash
+# optional — only needed if you installed the SDK elsewhere
+export ANDROID_HOME=/path/to/android-sdk
 ```
 
 **Linux:**
+
 ```bash
 # Download commandlinetools from https://developer.android.com/studio#command-tools
-# Extract to $HOME/android-sdk/cmdline-tools/latest/
-export ANDROID_HOME=$HOME/android-sdk
+mkdir -p ~/android-sdk/cmdline-tools
+unzip commandlinetools-linux-*.zip -d ~/android-sdk/cmdline-tools/
+mv ~/android-sdk/cmdline-tools/cmdline-tools ~/android-sdk/cmdline-tools/latest
+
+export ANDROID_HOME=~/android-sdk
+yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
 $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;34.0.0"
 ```
 
-Add to your shell profile:
+### 3. Build the stub DEX (one-time)
+
+The stub is a tiny Kotlin library that decrypts the DEX at runtime.
+Build it once and the result is cached at `fuin/stub.dex`:
+
 ```bash
-export ANDROID_HOME=$HOME/Library/Android/sdk   # macOS default
-export PATH=$PATH:$ANDROID_HOME/build-tools/34.0.0
+# requires JDK 17 and Android SDK (see above)
+cd stub && ./gradlew :app:assembleRelease && cd ..
+# fuin auto-converts the AAR → stub.dex on first pack run
 ```
 
-### 3. Install JDK 17+ (for stub build only)
+Skip this step entirely by pointing `FUIN_STUB_DEX` to a pre-built file:
 
 ```bash
-# macOS
-brew install openjdk@17
-
-# Ubuntu/Debian
-sudo apt install openjdk-17-jdk
+export FUIN_STUB_DEX=/path/to/stub.dex
 ```
 
 ## Getting Started
@@ -161,18 +186,17 @@ cd fuin
 
 # 2. Configure
 cp .env.example .env
-# Edit .env — at minimum set FUIN_API_KEY
+# Edit .env — set at minimum FUIN_API_KEY to any secret string
 
 # 3. Install Python dependencies
 uv sync
 
-# 4. Install git hooks
+# 4. (Optional) Install git hooks
 uv run pre-commit install
 
-# 5. Build the stub DEX (requires Android SDK + JDK)
-cd stub && ./gradlew :app:assembleRelease && cd ..
-# The packer will auto-convert the AAR to stub.dex on first run.
-# Alternatively: set FUIN_STUB_DEX=/path/to/stub.dex to skip the build.
+# 5. Start the server
+uv run fuin-server
+# Open http://localhost:8000
 ```
 
 ## Configuration
