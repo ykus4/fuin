@@ -1,7 +1,7 @@
 """
 Server-side packer pipeline.
 
-Runs: analyze → encrypt DEX → patch manifest → inject → zipalign → sign
+Runs: analyze → encrypt DEX → embed key → patch manifest → inject → zipalign → sign
 Returns the path of the packed APK.
 """
 
@@ -30,20 +30,14 @@ def _sha256_file(path: str) -> str:
 
 
 def analyze_apk(apk_path: str) -> dict:
-    """
-    Extract basic metadata from an APK before packing.
-    Returns: package_name, has_classes_dex, file_size_bytes, entry_count
-    """
     with zipfile.ZipFile(apk_path, "r") as z:
         names = z.namelist()
         has_dex = "classes.dex" in names
 
     from packer.main import get_package_name
 
-    package_name = get_package_name(apk_path)
-
     return {
-        "package_name": package_name,
+        "package_name": get_package_name(apk_path),
         "has_classes_dex": has_dex,
         "file_size_bytes": os.path.getsize(apk_path),
         "entry_count": len(names),
@@ -53,12 +47,10 @@ def analyze_apk(apk_path: str) -> dict:
 def run_pipeline(
     input_apk_path: str,
     app_class: str | None = None,
-) -> tuple[str, bytes, str]:
+) -> tuple[str, str]:
     """
-    Full pack pipeline.
-
     Returns:
-        (packed_apk_path, aes_key_bytes, apk_sha256_hex)
+        (packed_apk_path, apk_sha256_hex)
     """
     os.makedirs(config.PACKED_APK_DIR, exist_ok=True)
 
@@ -80,7 +72,7 @@ def run_pipeline(
 
         key = generate_key()
         encrypted = encrypt_dex(dex_data, key)
-        inject_encrypted_dex(step1, encrypted, original_class, step2, stub_dex=stub_dex)
+        inject_encrypted_dex(step1, encrypted, key, original_class, step2, stub_dex=stub_dex)
 
         log.info("aligning and signing")
         zipalign(step2, step3)
@@ -103,4 +95,4 @@ def run_pipeline(
         shutil.copy(step3, dest)
 
     log.info("pipeline complete dest=%s", dest)
-    return dest, key, sig
+    return dest, sig
