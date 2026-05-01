@@ -6,14 +6,13 @@ requires-python = ">=3.12"
 dependencies = [
     # packer
     "cryptography>=42.0.0",
-    "requests>=2.31.0",
     "lxml>=5.1.0",
     # server
     "fastapi>=0.111.0",
     "uvicorn[standard]>=0.29.0",
+    "python-multipart>=0.0.9",
     "sqlalchemy>=2.0.0",
     "pydantic>=2.7.0",
-    "python-jose[cryptography]>=3.3.0",
     "python-dotenv>=1.2.2",
 ]
 

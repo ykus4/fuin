@@ -89,7 +89,10 @@ fuin/
 │   ├── main.py             # HTTP endpoints  (fuin-server)
 │   ├── database.py         # SQLAlchemy / SQLite
 │   ├── models.py           # Pydantic request/response models
-│   └── pipeline.py         # Server-side pack pipeline
+│   ├── pipeline.py         # Server-side pack pipeline (with progress callbacks)
+│   ├── jobs.py             # In-memory async job store (SSE progress)
+│   └── static/
+│       └── index.html      # Web UI (drag-and-drop, progress bar, app list)
 │
 └── stub/                   # Android stub (Kotlin, minSdk 24)
     └── app/src/main/java/com/fuin/stub/
@@ -176,16 +179,37 @@ The packer needs a compiled stub DEX. Resolution order:
 2. `fuin/stub.dex` pre-built artifact
 3. Auto-build via `stub/gradlew assembleRelease` + `d8` (requires `ANDROID_HOME`)
 
+## Web UI
+
+Start the server and open `http://localhost:8000` in your browser:
+
+- Enter your API key and save it (stored in `localStorage`)
+- Drag-and-drop (or browse) an `.apk` file
+- Watch the real-time progress bar as the APK is packed
+- Click **Download packed APK** when complete
+- Browse and manage all previously packed apps at the bottom
+
 ## Server API
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/pack` | Upload APK → pack → return app_id |
-| `GET` | `/apps/{app_id}/download` | Download protected APK |
-| `GET` | `/apps` | List all packed apps |
+| `GET`  | `/` | Web UI |
+| `POST` | `/pack` | Upload APK → start async job → return `job_id` |
+| `GET`  | `/jobs/{job_id}/stream` | SSE progress stream (`text/event-stream`) |
+| `GET`  | `/jobs/{job_id}` | Poll job status |
+| `GET`  | `/apps/{app_id}/download` | Download protected APK |
+| `GET`  | `/apps` | List all packed apps |
 | `DELETE` | `/apps/{app_id}` | Delete a packed app |
 
-All endpoints require `X-API-Key` header.
+All endpoints except `GET /` require `X-API-Key` header (or `?api_key=` query param for SSE).
+
+### SSE event format
+
+```json
+{"status": "running", "step": "encrypting_dex", "pct": 40}
+{"status": "done",    "step": "done",            "pct": 100, "result": {...}}
+{"status": "error",   "step": "error",            "pct": 0,  "error": "..."}
+```
 
 ## Security Notes
 
