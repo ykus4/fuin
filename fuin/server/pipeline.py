@@ -1,13 +1,15 @@
 """
 Server-side packer pipeline.
 
-Runs: analyze → encrypt DEX → embed key → patch manifest → inject → zipalign → sign
+Runs: analyze → encrypt DEX(es) → embed key → patch manifest → inject → zipalign → sign
 Returns the path of the packed APK.
 """
 
 import hashlib
+import io
 import logging
 import os
+import re
 import shutil
 import tempfile
 import zipfile
@@ -15,7 +17,7 @@ from collections.abc import Callable
 
 from fuin import config
 from fuin.apk import create_debug_keystore, inject_encrypted_dex, sign_apk, zipalign
-from fuin.cli import get_package_name
+from fuin.apk_info import get_apk_info
 from fuin.crypto import encrypt_dex, generate_key
 from fuin.manifest import patch_manifest
 from fuin.stub_dex import get_stub_dex
@@ -23,6 +25,8 @@ from fuin.stub_dex import get_stub_dex
 log = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[str, int], None]
+
+_EXTRA_DEX_RE = re.compile(r"^classes(\d+)\.dex$")
 
 
 def _sha256_file(path: str) -> str:
@@ -34,16 +38,30 @@ def _sha256_file(path: str) -> str:
 
 
 def analyze_apk(apk_path: str) -> dict:
-    with zipfile.ZipFile(apk_path, "r") as z:
-        names = z.namelist()
-        has_dex = "classes.dex" in names
+    info = get_apk_info(apk_path)
+    # Ensure legacy keys expected by server/main.py are present
+    info.setdefault("has_classes_dex", "classes.dex" in info.get("dex_files", []))
+    return info
 
-    return {
-        "package_name": get_package_name(apk_path),
-        "has_classes_dex": has_dex,
-        "file_size_bytes": os.path.getsize(apk_path),
-        "entry_count": len(names),
-    }
+
+def _pack_extra_dex(apk_path: str, key: bytes) -> bytes | None:
+    """Read classes2.dex, classes3.dex, ... encrypt each and bundle into a ZIP blob."""
+    extra: dict[str, bytes] = {}
+    with zipfile.ZipFile(apk_path, "r") as z:
+        for name in sorted(z.namelist()):
+            if _EXTRA_DEX_RE.match(name):
+                extra[name] = z.read(name)
+
+    if not extra:
+        return None
+
+    # Bundle all extra DEX files into an in-memory ZIP, then encrypt the whole blob
+    inner_buf = io.BytesIO()
+    with zipfile.ZipFile(inner_buf, "w", zipfile.ZIP_STORED) as inner_zip:
+        for name, data in extra.items():
+            inner_zip.writestr(name, data)
+    bundle = inner_buf.getvalue()
+    return encrypt_dex(bundle, key)
 
 
 def run_pipeline(
@@ -84,9 +102,21 @@ def run_pipeline(
 
         key = generate_key()
         encrypted = encrypt_dex(dex_data, key)
+        # Encrypt any extra DEX files (multidex support)
+        encrypted_extra = _pack_extra_dex(input_apk_path, key)
+        if encrypted_extra:
+            log.info("multidex: packed extra DEX bundle (%d bytes)", len(encrypted_extra))
 
         _progress("injecting", 60)
-        inject_encrypted_dex(step1, encrypted, key, original_class, step2, stub_dex=stub_dex)
+        inject_encrypted_dex(
+            step1,
+            encrypted,
+            key,
+            original_class,
+            step2,
+            stub_dex=stub_dex,
+            encrypted_extra_dex=encrypted_extra,
+        )
 
         _progress("aligning", 75)
         zipalign(step2, step3)

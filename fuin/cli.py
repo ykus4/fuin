@@ -16,6 +16,7 @@ from fuin import config
 from fuin.apk import create_debug_keystore, inject_encrypted_dex, sign_apk, zipalign
 from fuin.crypto import encrypt_dex, generate_key
 from fuin.manifest import patch_manifest
+from fuin.server.pipeline import _pack_extra_dex
 from fuin.stub_dex import get_stub_dex
 
 log = logging.getLogger(__name__)
@@ -69,7 +70,18 @@ def pack(args: argparse.Namespace) -> None:
 
         key = generate_key()
         encrypted = encrypt_dex(dex_data, key)
-        inject_encrypted_dex(step1, encrypted, key, found_class, step2, stub_dex=stub_dex)
+        encrypted_extra = _pack_extra_dex(input_apk, key)
+        if encrypted_extra:
+            log.info("multidex: packed extra DEX bundle (%d bytes)", len(encrypted_extra))
+        inject_encrypted_dex(
+            step1,
+            encrypted,
+            key,
+            found_class,
+            step2,
+            stub_dex=stub_dex,
+            encrypted_extra_dex=encrypted_extra,
+        )
 
         log.info("running zipalign")
         zipalign(step2, step3)
