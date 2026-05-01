@@ -1,0 +1,29 @@
+# Environment / secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+
+# uv
+uv.lock
+
+# fuin runtime artifacts
+packed_apks/
+fuin.db
+packer/stub.dex
+
+# Android / Gradle
+stub/.gradle/
+stub/build/
+stub/app/build/
+stub/local.properties
+*.keystore
+*.jks
+
+# macOS
+.DS_Store
