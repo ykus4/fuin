@@ -9,18 +9,14 @@ import argparse
 import logging
 import os
 import shutil
-import sys
 import tempfile
 import zipfile
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from apk import create_debug_keystore, inject_encrypted_dex, sign_apk, zipalign
-from crypto import encrypt_dex, generate_key
-from manifest import patch_manifest
-from stub_dex import get_stub_dex
-
-import config
+from fuin import config
+from fuin.apk import create_debug_keystore, inject_encrypted_dex, sign_apk, zipalign
+from fuin.crypto import encrypt_dex, generate_key
+from fuin.manifest import patch_manifest
+from fuin.stub_dex import get_stub_dex
 
 log = logging.getLogger(__name__)
 
@@ -73,7 +69,6 @@ def pack(args: argparse.Namespace) -> None:
 
         key = generate_key()
         encrypted = encrypt_dex(dex_data, key)
-
         inject_encrypted_dex(step1, encrypted, key, found_class, step2, stub_dex=stub_dex)
 
         log.info("running zipalign")

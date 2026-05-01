@@ -23,13 +23,13 @@ def inject_encrypted_dex(
 ) -> None:
     """
     Inject into the APK:
-      classes.dex                  ← stub DEX (StubApplication)
-      assets/encrypted.dex         ← AES-GCM encrypted original classes.dex
-      assets/key.bin               ← AES key bytes
+      classes.dex                   ← stub DEX (StubApplication)
+      assets/encrypted.dex          ← AES-GCM encrypted original classes.dex
+      assets/key.bin                ← AES key bytes
       assets/original_app_class.txt ← original Application class name
     """
     if stub_dex is None:
-        from stub_dex import get_stub_dex
+        from fuin.stub_dex import get_stub_dex
 
         stub_dex = get_stub_dex()
 

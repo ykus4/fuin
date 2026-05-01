@@ -1,7 +1,7 @@
 [project]
 name = "fuin"
 version = "0.1.0"
-description = "Android DEX Packer — packer + key management server"
+description = "Android DEX Packer — web-based APK packing for static analysis resistance"
 requires-python = ">=3.12"
 dependencies = [
     # packer
@@ -18,12 +18,11 @@ dependencies = [
 ]
 
 [project.scripts]
-fuin-pack   = "packer.main:main"
+fuin-pack   = "fuin.cli:main"
 fuin-server = "server.main:run"
 
 [tool.hatch.build.targets.wheel]
-packages = ["packer", "server"]
-include = ["config.py"]
+packages = ["fuin", "server"]
 
 [build-system]
 requires = ["hatchling"]
