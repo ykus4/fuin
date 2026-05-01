@@ -115,45 +115,46 @@ def sign_apk(apk_path: str, keystore: str, key_alias: str, store_pass: str, key_
         raise RuntimeError(f"apksigner failed:\n{result.stderr}")
 
 
-def _find_keytool() -> str:
-    found = shutil.which("keytool")
-    if found:
-        return found
-    java_home = os.environ.get("JAVA_HOME") or str(Path("/opt/homebrew/opt/openjdk@17"))
-    candidate = Path(java_home) / "bin" / "keytool"
-    if candidate.is_file():
-        return str(candidate)
-    return "keytool"
-
-
 def create_debug_keystore(keystore_path: str) -> dict:
-    """Create a temporary debug keystore. Do not use in production."""
+    """Create a temporary debug keystore using the cryptography library (no keytool required)."""
+    import datetime
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives.serialization import pkcs12
+    from cryptography.x509.oid import NameOID
+
     alias = "fuin_debug"
     password = "android"
-    result = subprocess.run(
+
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+    name = x509.Name(
         [
-            _find_keytool(),
-            "-genkeypair",
-            "-keystore",
-            keystore_path,
-            "-alias",
-            alias,
-            "-keyalg",
-            "RSA",
-            "-keysize",
-            "2048",
-            "-validity",
-            "365",
-            "-storepass",
-            password,
-            "-keypass",
-            password,
-            "-dname",
-            "CN=Fuin Debug, O=Fuin, C=US",
-        ],
-        capture_output=True,
-        text=True,
+            x509.NameAttribute(NameOID.COMMON_NAME, "Fuin Debug"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Fuin"),
+            x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
+        ]
     )
-    if result.returncode != 0:
-        raise RuntimeError(f"keytool failed:\n{result.stderr}")
+    now = datetime.datetime.now(datetime.UTC)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now + datetime.timedelta(days=365))
+        .sign(private_key, hashes.SHA256())
+    )
+
+    p12 = pkcs12.serialize_key_and_certificates(
+        name=alias.encode(),
+        key=private_key,
+        cert=cert,
+        cas=None,
+        encryption_algorithm=serialization.BestAvailableEncryption(password.encode()),
+    )
+    Path(keystore_path).write_bytes(p12)
     return {"keystore": keystore_path, "alias": alias, "store_pass": password, "key_pass": password}
