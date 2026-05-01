@@ -18,10 +18,10 @@ dependencies = [
 
 [project.scripts]
 fuin-pack   = "fuin.cli:main"
-fuin-server = "server.main:run"
+fuin-server = "fuin.server.main:run"
 
 [tool.hatch.build.targets.wheel]
-packages = ["fuin", "server"]
+packages = ["fuin"]
 
 [build-system]
 requires = ["hatchling"]

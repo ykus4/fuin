@@ -96,19 +96,18 @@ def _aar_to_dex(aar_path: str) -> bytes:
 
 
 def _find_d8() -> str:
-    """Locate the d8 binary from ANDROID_HOME, ~/android-sdk, or PATH."""
-    for sdk_root in filter(
-        None, [os.environ.get("ANDROID_HOME"), str(Path.home() / "android-sdk")]
-    ):
+    """Locate the d8 binary from PATH or $ANDROID_HOME/build-tools/."""
+    found = shutil.which("d8")
+    if found:
+        return found
+
+    sdk_root = os.environ.get("ANDROID_HOME")
+    if sdk_root:
         bt_root = Path(sdk_root) / "build-tools"
         if bt_root.is_dir():
             for v in sorted(bt_root.iterdir(), reverse=True):
                 candidate = v / "d8"
                 if candidate.is_file():
                     return str(candidate)
-
-    found = shutil.which("d8")
-    if found:
-        return found
 
     raise FileNotFoundError("d8 not found. Set ANDROID_HOME or add build-tools to PATH.")

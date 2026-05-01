@@ -1,0 +1,13 @@
+services:
+  fuin:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - fuin-data:/data
+    env_file:
+      - .env
+    restart: unless-stopped
+
+volumes:
+  fuin-data:

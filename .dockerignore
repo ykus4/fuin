@@ -1,0 +1,22 @@
+.git/
+.venv/
+.env
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Runtime artifacts (mounted as volume in container)
+packed_apks/
+fuin.db
+
+# Stub build artifacts (rebuilt inside Docker)
+stub/.gradle/
+stub/build/
+stub/app/build/
+fuin/stub.dex
+
+*.keystore
+*.jks

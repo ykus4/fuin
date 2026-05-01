@@ -14,20 +14,13 @@ ENCRYPTED_DEX_ASSET = "assets/encrypted.dex"
 
 
 def _find_build_tool(name: str) -> str:
-    """Locate an Android build-tool binary (zipalign, apksigner, etc.).
-
-    Search order:
-      1. PATH (shutil.which)
-      2. $ANDROID_HOME/build-tools/<latest>/
-      3. ~/android-sdk/build-tools/<latest>/  (fuin default install location)
-    """
+    """Locate an Android build-tool binary. Checks PATH then $ANDROID_HOME/build-tools/."""
     found = shutil.which(name)
     if found:
         return found
 
-    for sdk_root in filter(
-        None, [os.environ.get("ANDROID_HOME"), str(Path.home() / "android-sdk")]
-    ):
+    sdk_root = os.environ.get("ANDROID_HOME")
+    if sdk_root:
         bt_root = Path(sdk_root) / "build-tools"
         if bt_root.is_dir():
             for version_dir in sorted(bt_root.iterdir(), reverse=True):
@@ -35,7 +28,7 @@ def _find_build_tool(name: str) -> str:
                 if candidate.is_file():
                     return str(candidate)
 
-    return name  # fall back to bare name so the subprocess error is informative
+    return name
 
 
 KEY_ASSET = "assets/key.bin"
@@ -182,6 +175,7 @@ def sign_apk(apk_path: str, keystore: str, key_alias: str, store_pass: str, key_
     """
     apksigner_bin = _find_build_tool("apksigner")
     if Path(apksigner_bin).is_file():
+        env = _apksigner_env()
         result = subprocess.run(
             [
                 apksigner_bin,
@@ -198,11 +192,21 @@ def sign_apk(apk_path: str, keystore: str, key_alias: str, store_pass: str, key_
             ],
             capture_output=True,
             text=True,
+            env=env,
         )
+        # apksigner is a shell script — fall back to pure-Python if Java is unavailable
         if result.returncode != 0:
-            raise RuntimeError(f"apksigner failed:\n{result.stderr}")
+            if "Java Runtime" in result.stderr or "java" in result.stderr.lower():
+                _sign_apk_v1(apk_path, keystore, key_alias, store_pass)
+            else:
+                raise RuntimeError(f"apksigner failed:\n{result.stderr}")
     else:
         _sign_apk_v1(apk_path, keystore, key_alias, store_pass)
+
+
+def _apksigner_env() -> dict:
+    """Return the current environment for apksigner subprocess."""
+    return os.environ.copy()
 
 
 def _sign_apk_v1(apk_path: str, keystore_path: str, alias: str, password: str) -> None:
