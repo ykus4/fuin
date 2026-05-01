@@ -10,7 +10,7 @@ dist/
 build/
 
 # uv
-uv.lock
+# uv.lock is committed so Docker builds can use --frozen
 
 # fuin runtime artifacts
 packed_apks/

@@ -103,81 +103,16 @@ fuin/
 
 ## Requirements
 
-| Component | Requirement |
-|-----------|-------------|
-| packer / server | Python ≥ 3.12, [uv](https://github.com/astral-sh/uv) |
-| pack / sign | `zipalign`, `apksigner` (Android SDK build-tools ≥ 34) |
-| stub build | JDK 17+, Android SDK build-tools ≥ 34 |
-| debug signing | no extra deps — uses `cryptography` library (already installed) |
-
-> `zipalign` and `apksigner` are auto-discovered from `$ANDROID_HOME/build-tools/` or
-> `~/android-sdk/build-tools/` — no manual PATH configuration needed.
-
-## Environment Setup
-
-### 1. Install uv
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-### 2. Install Android SDK build-tools
-
-fuin needs `zipalign` and `apksigner` from Android build-tools.
-
-**macOS — recommended (no Android Studio required):**
-
-```bash
-# Install OpenJDK 17 (needed for Gradle / stub build)
-brew install openjdk@17
-
-# Download build-tools 34 directly
-mkdir -p ~/android-sdk/build-tools
-curl -L "https://dl.google.com/android/repository/build-tools_r34-macosx.zip" \
-  -o /tmp/build-tools-34.zip
-unzip -q /tmp/build-tools-34.zip -d /tmp/bt34
-mv /tmp/bt34/android-14 ~/android-sdk/build-tools/34.0.0
-```
-
-fuin will automatically look for tools in `~/android-sdk/build-tools/`.
-To override, set `ANDROID_HOME` in your shell:
-
-```bash
-# optional — only needed if you installed the SDK elsewhere
-export ANDROID_HOME=/path/to/android-sdk
-```
-
-**Linux:**
-
-```bash
-# Download commandlinetools from https://developer.android.com/studio#command-tools
-mkdir -p ~/android-sdk/cmdline-tools
-unzip commandlinetools-linux-*.zip -d ~/android-sdk/cmdline-tools/
-mv ~/android-sdk/cmdline-tools/cmdline-tools ~/android-sdk/cmdline-tools/latest
-
-export ANDROID_HOME=~/android-sdk
-yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
-$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;34.0.0"
-```
-
-### 3. Build the stub DEX (one-time)
-
-The stub is a tiny Kotlin library that decrypts the DEX at runtime.
-Build it once and the result is cached at `fuin/stub.dex`:
-
-```bash
-# requires JDK 17 and Android SDK (see above)
-cd stub && ./gradlew :app:assembleRelease && cd ..
-# fuin auto-converts the AAR → stub.dex on first pack run
-```
-
-Skip this step entirely by pointing `FUIN_STUB_DEX` to a pre-built file:
-
-```bash
-export FUIN_STUB_DEX=/path/to/stub.dex
-```
+| Method | Requirements |
+|--------|-------------|
+| **Docker (recommended)** | Docker, Docker Compose |
+| Local | Python ≥ 3.12, uv, JDK 17, Android SDK build-tools ≥ 34 |
 
 ## Getting Started
+
+### Docker (recommended)
+
+No local toolchain needed — Android SDK, JDK, and stub DEX are all built inside the image.
 
 ```bash
 # 1. Clone
@@ -188,16 +123,48 @@ cd fuin
 cp .env.example .env
 # Edit .env — set at minimum FUIN_API_KEY to any secret string
 
-# 3. Install Python dependencies
-uv sync
-
-# 4. (Optional) Install git hooks
-uv run pre-commit install
-
-# 5. Start the server
-uv run fuin-server
+# 3. Build and start
+docker compose up --build
 # Open http://localhost:8000
 ```
+
+The first build takes a few minutes (downloads Android build-tools and builds the stub DEX).
+Subsequent starts are instant.
+
+Packed APKs and the SQLite database are stored in a named Docker volume (`fuin-data`) and persist across restarts.
+
+### Local setup
+
+<details>
+<summary>Expand for local setup instructions</summary>
+
+**macOS:**
+
+```bash
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install OpenJDK 17
+brew install openjdk@17
+
+# Install Android build-tools 34 (zipalign + apksigner)
+mkdir -p ~/android-sdk/build-tools
+curl -L "https://dl.google.com/android/repository/build-tools_r34-macosx.zip" \
+  -o /tmp/bt.zip
+unzip -q /tmp/bt.zip -d /tmp/bt && mv /tmp/bt/android-14 ~/android-sdk/build-tools/34.0.0
+
+# Build stub DEX (one-time)
+cd stub && ./gradlew :app:assembleRelease && cd ..
+
+# Install dependencies and start
+uv sync
+cp .env.example .env  # edit FUIN_API_KEY
+uv run fuin-server
+```
+
+fuin auto-discovers tools from `~/android-sdk/build-tools/` — no PATH changes needed.
+
+</details>
 
 ## Configuration
 
