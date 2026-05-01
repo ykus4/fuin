@@ -17,6 +17,7 @@
       --green: #3ecf8e;
       --red: #ff5c5c;
       --yellow: #f7c948;
+      --blue: #4d9fff;
       --text: #e2e4f0;
       --muted: #6b7099;
       --radius: 12px;
@@ -31,7 +32,7 @@
       padding: 32px 16px;
     }
 
-    .container { max-width: 760px; margin: 0 auto; }
+    .container { max-width: 800px; margin: 0 auto; }
 
     header { margin-bottom: 40px; }
     header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
@@ -39,9 +40,7 @@
     header p { color: var(--muted); margin-top: 6px; }
 
     /* API Key */
-    .api-key-row {
-      display: flex; gap: 8px; margin-bottom: 32px;
-    }
+    .api-key-row { display: flex; gap: 8px; margin-bottom: 32px; }
     .api-key-row input {
       flex: 1;
       background: var(--surface);
@@ -77,21 +76,17 @@
       position: relative;
     }
     .dropzone.hover { border-color: var(--accent); background: rgba(108,99,255,.06); }
-    .dropzone input[type=file] {
-      position: absolute; inset: 0; opacity: 0; cursor: pointer;
-    }
+    .dropzone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
     .dropzone-icon { font-size: 40px; margin-bottom: 12px; }
     .dropzone p { color: var(--muted); line-height: 1.6; }
     .dropzone p strong { color: var(--text); }
 
-    /* App class input */
-    .option-row {
-      margin-top: 16px;
-      display: flex; gap: 8px; align-items: center;
-    }
-    .option-row label { color: var(--muted); white-space: nowrap; font-size: 12px; }
+    /* Options grid */
+    .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
+    @media (max-width: 600px) { .options-grid { grid-template-columns: 1fr; } }
+    .option-row { display: flex; flex-direction: column; gap: 4px; }
+    .option-row label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
     .option-row input {
-      flex: 1;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -158,10 +153,7 @@
     .step-item.active { color: var(--text); background: var(--surface2); }
     .step-item.done { color: var(--green); }
     .step-item.error { color: var(--red); }
-    .step-dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: currentColor; flex-shrink: 0;
-    }
+    .step-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
 
     /* Result card */
     #result-section { margin-top: 28px; display: none; }
@@ -173,6 +165,42 @@
     }
     .result-card h3 { font-size: 15px; margin-bottom: 14px; color: var(--green); }
     .result-card h3.error-title { color: var(--red); }
+
+    /* Info grid for analysis */
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+    @media (max-width: 500px) { .info-grid { grid-template-columns: 1fr; } }
+    .info-cell {
+      background: var(--surface2);
+      border-radius: 8px;
+      padding: 10px 14px;
+    }
+    .info-cell .ic-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+    .info-cell .ic-val { font-size: 13px; font-weight: 500; }
+
+    .perms-section { margin-top: 12px; }
+    .perms-section .perms-toggle {
+      background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px;
+      padding: 0; transition: color .15s;
+    }
+    .perms-section .perms-toggle:hover { color: var(--text); }
+    .perms-list {
+      margin-top: 8px;
+      display: none;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .perms-list.open { display: flex; }
+    .perm-tag {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: monospace;
+    }
+    .perm-tag.dangerous { border-color: var(--red); color: var(--red); }
+
     .meta-row { display: flex; gap: 8px; margin-bottom: 6px; }
     .meta-row .key { color: var(--muted); min-width: 120px; font-size: 12px; }
     .meta-row .val { font-size: 12px; word-break: break-all; }
@@ -203,12 +231,16 @@
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 14px 18px;
-      display: flex; align-items: center; gap: 16px;
     }
+    .app-card-header { display: flex; align-items: center; gap: 16px; }
     .app-card-info { flex: 1; min-width: 0; }
     .app-card-pkg { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .app-card-sig { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: monospace; }
+    .app-card-meta { font-size: 11px; color: var(--muted); margin-top: 2px; display: flex; gap: 10px; flex-wrap: wrap; }
+    .app-card-sig { font-family: monospace; }
     .app-card-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .app-card-details { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+    .app-card-details.open { display: block; }
+
     .btn-sm {
       padding: 6px 14px;
       border-radius: 6px;
@@ -225,6 +257,8 @@
     .btn-sm:hover { background: var(--border); }
     .btn-sm.danger { border-color: var(--red); color: var(--red); }
     .btn-sm.danger:hover { background: rgba(255,92,92,.12); }
+    .btn-sm.mapping { border-color: var(--blue); color: var(--blue); }
+    .btn-sm.mapping:hover { background: rgba(77,159,255,.12); }
     .empty-state { color: var(--muted); text-align: center; padding: 24px; }
 
     .refresh-btn {
@@ -233,6 +267,24 @@
       transition: color .15s;
     }
     .refresh-btn:hover { color: var(--text); }
+
+    /* Mapping upload */
+    .mapping-upload { margin-top: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .mapping-upload input[type=file] { font-size: 12px; color: var(--muted); flex: 1; min-width: 0; }
+    .mapping-upload .btn-sm { flex-shrink: 0; }
+    .mapping-status { font-size: 11px; color: var(--green); margin-top: 4px; display: none; }
+
+    /* SDK badges */
+    .sdk-badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
   </style>
 </head>
 <body>
@@ -256,9 +308,16 @@
     <p><strong>Drop your APK here</strong><br/>or click to browse</p>
   </div>
 
-  <div class="option-row">
-    <label>Application class (optional)</label>
-    <input id="app-class" type="text" placeholder="com.example.MyApp" />
+  <!-- Options -->
+  <div class="options-grid">
+    <div class="option-row">
+      <label>Application class (optional)</label>
+      <input id="app-class" type="text" placeholder="com.example.MyApp (auto-detected)" />
+    </div>
+    <div class="option-row">
+      <label>Webhook URL (optional)</label>
+      <input id="webhook-url" type="url" placeholder="https://hooks.example.com/notify" />
+    </div>
   </div>
 
   <button class="pack-btn" id="pack-btn" onclick="startPack()">Pack APK</button>
@@ -297,13 +356,25 @@
 const STEPS = [
   { id: "loading_stub",       label: "Loading stub DEX" },
   { id: "patching_manifest",  label: "Patching AndroidManifest.xml" },
-  { id: "encrypting_dex",     label: "Encrypting classes.dex (AES-256-GCM)" },
+  { id: "encrypting_dex",     label: "Encrypting DEX files (AES-256-GCM)" },
   { id: "injecting",          label: "Injecting into APK" },
   { id: "aligning",           label: "Running zipalign" },
-  { id: "signing",            label: "Signing APK" },
+  { id: "signing",            label: "Signing APK (v1 + v2)" },
   { id: "saving",             label: "Saving packed APK" },
   { id: "done",               label: "Done" },
 ];
+
+const DANGEROUS_PERMS = new Set([
+  "android.permission.READ_CONTACTS","android.permission.WRITE_CONTACTS",
+  "android.permission.ACCESS_FINE_LOCATION","android.permission.ACCESS_COARSE_LOCATION",
+  "android.permission.READ_CALL_LOG","android.permission.WRITE_CALL_LOG",
+  "android.permission.CAMERA","android.permission.RECORD_AUDIO",
+  "android.permission.READ_PHONE_STATE","android.permission.CALL_PHONE",
+  "android.permission.READ_SMS","android.permission.SEND_SMS",
+  "android.permission.READ_EXTERNAL_STORAGE","android.permission.WRITE_EXTERNAL_STORAGE",
+  "android.permission.GET_ACCOUNTS","android.permission.USE_BIOMETRIC",
+  "android.permission.BODY_SENSORS","android.permission.ACTIVITY_RECOGNITION",
+]);
 
 let selectedFile = null;
 
@@ -357,6 +428,8 @@ async function startPack() {
   fd.append("file", selectedFile);
   const appClass = document.getElementById("app-class").value.trim();
   if (appClass) fd.append("app_class", appClass);
+  const webhookUrl = document.getElementById("webhook-url").value.trim();
+  if (webhookUrl) fd.append("webhook_url", webhookUrl);
 
   let jobId;
   try {
@@ -371,8 +444,6 @@ async function startPack() {
     return;
   }
 
-  // SSE stream
-  // EventSource cannot set custom headers; pass key as query param
   const es = new EventSource(`/jobs/${jobId}/stream?api_key=${encodeURIComponent(key)}`);
   es.onmessage = (e) => {
     const ev = JSON.parse(e.data);
@@ -419,7 +490,6 @@ function renderSteps(activeId) {
 function updateProgress(ev) {
   setProgress(ev.step, ev.pct, ev.status === "error");
   if (ev.status === "running" || ev.status === "done") {
-    // mark previous steps done
     let found = false;
     for (const s of STEPS) {
       const el = document.getElementById(`step-${s.id}`);
@@ -449,31 +519,78 @@ function stepLabel(id) {
   return STEPS.find(s => s.id === id)?.label || id;
 }
 
-// ── Result / error ─────────────────────────────────────────────────────────
+// ── Result ─────────────────────────────────────────────────────────────────
 function showResult(result) {
   const key = getKey();
+  const a = result.analysis || {};
   const card = document.getElementById("result-card");
+
+  const sdkBadge = (v, label) => v != null
+    ? `<span class="sdk-badge">${escHtml(label)}: API ${v}</span>` : "";
+
+  const dexInfo = a.dex_count > 1
+    ? `${a.dex_count} DEX files (multidex)` : `${a.dex_count || 1} DEX file`;
+
+  const permsHtml = renderPermsHtml(a.permissions || []);
+
   card.innerHTML = `
     <h3>✓ Packing complete</h3>
-    ${metaRow("Package", result.package_name)}
-    ${metaRow("App ID", result.app_id)}
+    <div class="info-grid">
+      <div class="info-cell">
+        <div class="ic-label">Package</div>
+        <div class="ic-val">${escHtml(result.package_name)}</div>
+      </div>
+      <div class="info-cell">
+        <div class="ic-label">Version</div>
+        <div class="ic-val">${escHtml(a.version_name || '—')}</div>
+      </div>
+      <div class="info-cell">
+        <div class="ic-label">SDK</div>
+        <div class="ic-val" style="display:flex;gap:6px;flex-wrap:wrap">
+          ${sdkBadge(a.min_sdk, 'min') || '<span style="color:var(--muted)">—</span>'}
+          ${sdkBadge(a.target_sdk, 'target')}
+        </div>
+      </div>
+      <div class="info-cell">
+        <div class="ic-label">Components</div>
+        <div class="ic-val" style="color:var(--muted);font-size:12px">
+          ${a.activities || 0}A · ${a.services || 0}S · ${a.receivers || 0}R · ${a.providers || 0}P
+        </div>
+      </div>
+      <div class="info-cell">
+        <div class="ic-label">DEX</div>
+        <div class="ic-val">${escHtml(dexInfo)}</div>
+      </div>
+      <div class="info-cell">
+        <div class="ic-label">Size</div>
+        <div class="ic-val">${(a.file_size_bytes / 1024 / 1024).toFixed(2)} MB</div>
+      </div>
+    </div>
+    ${permsHtml}
     ${metaRow("SHA-256", result.apk_signature.substring(0, 32) + "…")}
-    ${metaRow("DEX entries", result.analysis.entry_count)}
-    ${metaRow("Input size", (result.analysis.file_size_bytes / 1024).toFixed(1) + " KB")}
-    <a class="download-btn" href="/apps/${result.app_id}/download"
-       onclick="this.setAttribute('download',''); addHeader(event, '${escHtml(key)}')"
-    >⬇ Download packed APK</a>
+    <button class="download-btn" onclick="downloadApp('${result.app_id}','${escHtml(result.package_name)}')">
+      ⬇ Download packed APK
+    </button>
   `;
   document.getElementById("result-section").style.display = "block";
 }
 
-function addHeader(event, key) {
-  // browsers can't set custom headers on <a> clicks; use fetch instead
-  event.preventDefault();
-  const href = event.currentTarget.href;
-  const pkg = event.currentTarget.closest(".result-card")
-                ?.querySelector(".val")?.textContent || "packed";
-  fetchDownload(href, key, `${pkg}_packed.apk`);
+function renderPermsHtml(perms) {
+  if (!perms.length) return "";
+  const dangerous = perms.filter(p => DANGEROUS_PERMS.has(p));
+  const safe = perms.filter(p => !DANGEROUS_PERMS.has(p));
+  const tags = [
+    ...dangerous.map(p => `<span class="perm-tag dangerous">${escHtml(p.replace("android.permission.",""))}</span>`),
+    ...safe.map(p => `<span class="perm-tag">${escHtml(p.replace("android.permission.",""))}</span>`),
+  ].join("");
+  const dangerNote = dangerous.length ? ` <span style="color:var(--red);font-size:11px">(${dangerous.length} dangerous)</span>` : "";
+  return `
+    <div class="perms-section">
+      <button class="perms-toggle" onclick="this.nextElementSibling.classList.toggle('open')">
+        ▸ ${perms.length} permissions${dangerNote}
+      </button>
+      <div class="perms-list">${tags}</div>
+    </div>`;
 }
 
 function showError(msg) {
@@ -517,20 +634,109 @@ function renderApps(apps) {
     list.innerHTML = '<div class="empty-state">No packed apps yet.</div>';
     return;
   }
-  list.innerHTML = apps.map(a => `
+  list.innerHTML = apps.map(a => {
+    const analysis = a.analysis || {};
+    const sdkText = [
+      analysis.min_sdk != null ? `min API ${analysis.min_sdk}` : null,
+      analysis.target_sdk != null ? `target API ${analysis.target_sdk}` : null,
+    ].filter(Boolean).join(" · ");
+    const dexText = analysis.dex_count > 1 ? `${analysis.dex_count} DEX` : "";
+    const date = a.created_at ? new Date(a.created_at).toLocaleDateString() : "";
+    const mappingBtn = a.has_mapping
+      ? `<button class="btn-sm mapping" onclick="downloadMapping('${a.app_id}','${escHtml(a.package_name)}')">📄 mapping</button>`
+      : ``;
+
+    return `
     <div class="app-card" id="app-${a.app_id}">
-      <div class="app-card-info">
-        <div class="app-card-pkg">${escHtml(a.package_name)}</div>
-        <div class="app-card-sig">${escHtml(a.apk_signature.substring(0,32))}…</div>
+      <div class="app-card-header">
+        <div class="app-card-info">
+          <div class="app-card-pkg">${escHtml(a.package_name)}</div>
+          <div class="app-card-meta">
+            ${sdkText ? `<span>${escHtml(sdkText)}</span>` : ""}
+            ${dexText ? `<span>${escHtml(dexText)}</span>` : ""}
+            ${date ? `<span>${escHtml(date)}</span>` : ""}
+            <span class="app-card-sig">${escHtml(a.apk_signature.substring(0,16))}…</span>
+          </div>
+        </div>
+        <div class="app-card-actions">
+          <button class="btn-sm" onclick="toggleDetails('${a.app_id}')">details</button>
+          <button class="btn-sm" onclick="downloadApp('${a.app_id}','${escHtml(a.package_name)}')">⬇ Download</button>
+          <button class="btn-sm danger" onclick="deleteApp('${a.app_id}')">Delete</button>
+        </div>
       </div>
-      <div class="app-card-actions">
-        <button class="btn-sm" onclick="downloadApp('${a.app_id}','${escHtml(a.package_name)}')">⬇ Download</button>
-        <button class="btn-sm danger" onclick="deleteApp('${a.app_id}')">Delete</button>
+      <div class="app-card-details" id="details-${a.app_id}">
+        ${renderAppDetails(a)}
+        <div style="margin-top:10px">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">ProGuard Mapping</div>
+          ${mappingBtn}
+          <div class="mapping-upload">
+            <input type="file" id="mapping-file-${a.app_id}" accept=".txt,.map" />
+            <button class="btn-sm" onclick="uploadMapping('${a.app_id}')">Upload mapping.txt</button>
+          </div>
+          <div class="mapping-status" id="mapping-status-${a.app_id}">Uploaded successfully</div>
+        </div>
       </div>
-    </div>
-  `).join("");
+    </div>`;
+  }).join("");
 }
 
+function renderAppDetails(a) {
+  const analysis = a.analysis || {};
+  const permsHtml = renderPermsHtml(analysis.permissions || []);
+  const sdkBadge = (v, label) => v != null
+    ? `<span class="sdk-badge">${escHtml(label)}: API ${v}</span>` : "";
+  return `
+    <div class="info-grid" style="margin-bottom:10px">
+      <div class="info-cell"><div class="ic-label">Version</div><div class="ic-val">${escHtml(analysis.version_name||'—')}</div></div>
+      <div class="info-cell">
+        <div class="ic-label">SDK</div>
+        <div class="ic-val" style="display:flex;gap:6px;flex-wrap:wrap">
+          ${sdkBadge(analysis.min_sdk,'min')||'<span style="color:var(--muted)">—</span>'}
+          ${sdkBadge(analysis.target_sdk,'target')}
+        </div>
+      </div>
+      <div class="info-cell">
+        <div class="ic-label">Components</div>
+        <div class="ic-val" style="color:var(--muted);font-size:12px">
+          ${analysis.activities||0}A · ${analysis.services||0}S · ${analysis.receivers||0}R · ${analysis.providers||0}P
+        </div>
+      </div>
+      <div class="info-cell">
+        <div class="ic-label">DEX</div>
+        <div class="ic-val">${escHtml((analysis.dex_files||['classes.dex']).join(', '))}</div>
+      </div>
+    </div>
+    ${permsHtml}`;
+}
+
+function toggleDetails(appId) {
+  document.getElementById(`details-${appId}`)?.classList.toggle("open");
+}
+
+// ── Mapping upload ─────────────────────────────────────────────────────────
+async function uploadMapping(appId) {
+  const key = getKey();
+  const input = document.getElementById(`mapping-file-${appId}`);
+  if (!input.files[0]) { alert("Select a mapping.txt first."); return; }
+  const fd = new FormData();
+  fd.append("file", input.files[0]);
+  try {
+    const res = await fetch(`/apps/${appId}/mapping/upload`, {
+      method: "POST",
+      headers: { "X-API-Key": key },
+      body: fd,
+    });
+    if (!res.ok) { alert("Upload failed: " + (await res.json()).detail); return; }
+    const status = document.getElementById(`mapping-status-${appId}`);
+    if (status) { status.style.display = "block"; setTimeout(() => { status.style.display = "none"; }, 3000); }
+  } catch (err) { alert("Error: " + err.message); }
+}
+
+async function downloadMapping(appId, pkg) {
+  fetchDownload(`/apps/${appId}/mapping`, getKey(), `${pkg}_mapping.txt`);
+}
+
+// ── Download / delete ──────────────────────────────────────────────────────
 function downloadApp(appId, pkg) {
   fetchDownload(`/apps/${appId}/download`, getKey(), `${pkg}_packed.apk`);
 }

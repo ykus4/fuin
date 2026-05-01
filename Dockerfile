@@ -3,7 +3,6 @@
 # ── Stage 1: build stub DEX ───────────────────────────────────────────────
 FROM eclipse-temurin:17-jdk AS stub-builder
 
-# Install Android build-tools for d8
 RUN apt-get update && apt-get install -y --no-install-recommends curl unzip && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL "https://dl.google.com/android/repository/build-tools_r34-linux.zip" \
@@ -12,7 +11,6 @@ RUN curl -fsSL "https://dl.google.com/android/repository/build-tools_r34-linux.z
     && mv /tmp/bt/android-14 /opt/android-build-tools \
     && rm -rf /tmp/bt /tmp/build-tools.zip
 
-ENV ANDROID_HOME=/opt/android-sdk
 ENV PATH="/opt/android-build-tools:$PATH"
 
 WORKDIR /stub
@@ -35,19 +33,7 @@ RUN if [ ! -f /stub-dex/classes.dex ]; then \
 # ── Stage 2: runtime ──────────────────────────────────────────────────────
 FROM python:3.13-slim
 
-# Install zipalign + apksigner (Android build-tools)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      curl unzip openjdk-17-jre-headless \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN curl -fsSL "https://dl.google.com/android/repository/build-tools_r34-linux.zip" \
-      -o /tmp/build-tools.zip \
-    && unzip -q /tmp/build-tools.zip -d /tmp/bt \
-    && mv /tmp/bt/android-14 /opt/android-build-tools \
-    && rm -rf /tmp/bt /tmp/build-tools.zip
-
-ENV ANDROID_HOME=/opt/android-sdk
-ENV PATH="/opt/android-build-tools:$PATH"
+# No Android build-tools needed at runtime — fuin uses pure-Python zipalign and APK signing
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv

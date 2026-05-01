@@ -12,18 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download Android build-tools
-        run: |
-          mkdir -p .docker-deps
-          curl -fsSL "https://dl.google.com/android/repository/build-tools_r34-linux.zip" \
-            -o .docker-deps/build-tools_r34-linux.zip
-
-      - name: Download Gradle distribution
-        run: |
-          GRADLE_VERSION=8.6
-          curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" \
-            -o .docker-deps/gradle-${GRADLE_VERSION}-bin.zip
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
