@@ -106,14 +106,57 @@ fuin/
 | Component | Requirement |
 |-----------|-------------|
 | packer / server | Python ≥ 3.12, [uv](https://github.com/astral-sh/uv) |
-| stub build | Android SDK (build-tools ≥ 33), `ANDROID_HOME` set |
-| pack / sign | `zipalign`, `apksigner` on PATH (from Android SDK) |
+| pack / sign | `zipalign`, `apksigner` on PATH (Android SDK build-tools) |
+| stub build | JDK 17+, Android SDK (build-tools ≥ 34), `ANDROID_HOME` set |
+
+## Environment Setup
+
+### 1. Install uv
+
+```bash
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### 2. Install Android SDK (for zipalign / apksigner / stub build)
+
+**macOS (Homebrew):**
+```bash
+brew install --cask android-commandlinetools
+# then accept licenses
+yes | sdkmanager --licenses
+sdkmanager "build-tools;34.0.0"
+```
+
+**Linux:**
+```bash
+# Download commandlinetools from https://developer.android.com/studio#command-tools
+# Extract to $HOME/android-sdk/cmdline-tools/latest/
+export ANDROID_HOME=$HOME/android-sdk
+$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;34.0.0"
+```
+
+Add to your shell profile:
+```bash
+export ANDROID_HOME=$HOME/Library/Android/sdk   # macOS default
+export PATH=$PATH:$ANDROID_HOME/build-tools/34.0.0
+```
+
+### 3. Install JDK 17+ (for stub build only)
+
+```bash
+# macOS
+brew install openjdk@17
+
+# Ubuntu/Debian
+sudo apt install openjdk-17-jdk
+```
 
 ## Getting Started
 
 ```bash
 # 1. Clone
-git clone https://github.com/your-org/fuin.git
+git clone https://github.com/yotti/fuin.git
 cd fuin
 
 # 2. Configure
@@ -125,6 +168,11 @@ uv sync
 
 # 4. Install git hooks
 uv run pre-commit install
+
+# 5. Build the stub DEX (requires Android SDK + JDK)
+cd stub && ./gradlew :app:assembleRelease && cd ..
+# The packer will auto-convert the AAR to stub.dex on first run.
+# Alternatively: set FUIN_STUB_DEX=/path/to/stub.dex to skip the build.
 ```
 
 ## Configuration
@@ -134,6 +182,7 @@ All secrets are read from environment variables (or `.env`). See [.env.example](
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `FUIN_API_KEY` | Yes | API key for server endpoints |
+| `FUIN_STUB_DEX` | No | Path to pre-built stub.dex (skips Gradle build) |
 | `FUIN_KEYSTORE_PATH` | No | Signing keystore path (debug keystore used if unset) |
 | `FUIN_KEYSTORE_ALIAS` | No | Key alias (default: `fuin`) |
 | `FUIN_KEYSTORE_STORE_PASS` | No | Keystore password |
@@ -143,29 +192,45 @@ All secrets are read from environment variables (or `.env`). See [.env.example](
 
 ## Usage
 
-### Option A — Server (recommended)
+### Option A — Web UI (recommended)
 
+```bash
+uv run fuin-server
+# Open http://localhost:8000
+```
+
+1. Enter your `FUIN_API_KEY` in the API Key field and click **Save**
+2. Drag-and-drop your `.apk` onto the upload area
+3. Watch the real-time progress bar
+4. Click **Download packed APK** when complete
+
+### Option B — REST API
+
+Start the server:
 ```bash
 uv run fuin-server
 ```
 
 Upload and pack:
-
 ```bash
 curl -X POST http://localhost:8000/pack \
   -H "X-API-Key: $FUIN_API_KEY" \
   -F "file=@MyApp.apk"
-# → { "app_id": "...", "package_name": "...", ... }
+# → { "job_id": "..." }
+```
+
+Stream progress (SSE):
+```bash
+curl -N "http://localhost:8000/jobs/{job_id}/stream?api_key=$FUIN_API_KEY"
 ```
 
 Download the protected APK:
-
 ```bash
 curl -OJ http://localhost:8000/apps/{app_id}/download \
   -H "X-API-Key: $FUIN_API_KEY"
 ```
 
-### Option B — CLI
+### Option C — CLI
 
 ```bash
 uv run fuin-pack pack input.apk output_protected.apk
@@ -176,8 +241,8 @@ uv run fuin-pack pack input.apk output_protected.apk
 The packer needs a compiled stub DEX. Resolution order:
 
 1. `FUIN_STUB_DEX=/path/to/stub.dex` env var
-2. `fuin/stub.dex` pre-built artifact
-3. Auto-build via `stub/gradlew assembleRelease` + `d8` (requires `ANDROID_HOME`)
+2. `fuin/stub.dex` pre-built artifact (committed or built once)
+3. Auto-build via `stub/gradlew :app:assembleRelease` + `d8` (requires Android SDK + JDK)
 
 ## Web UI
 

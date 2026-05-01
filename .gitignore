@@ -15,7 +15,7 @@ uv.lock
 # fuin runtime artifacts
 packed_apks/
 fuin.db
-packer/stub.dex
+fuin/stub.dex
 
 # Android / Gradle
 stub/.gradle/
