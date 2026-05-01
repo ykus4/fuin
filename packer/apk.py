@@ -1,6 +1,6 @@
 """
 APK repack utilities.
-Handles: unpack, inject encrypted DEX, repack, zipalign, apksigner.
+Handles: inject encrypted DEX + key, repack, zipalign, apksigner.
 """
 
 import io
@@ -9,27 +9,24 @@ import subprocess
 import zipfile
 
 ENCRYPTED_DEX_ASSET = "assets/encrypted.dex"
+KEY_ASSET = "assets/key.bin"
 ORIGINAL_APP_META_ASSET = "assets/original_app_class.txt"
-
-
-def unpack_apk(apk_path: str, out_dir: str) -> None:
-    with zipfile.ZipFile(apk_path, "r") as z:
-        z.extractall(out_dir)
 
 
 def inject_encrypted_dex(
     apk_path: str,
     encrypted_dex: bytes,
+    key: bytes,
     original_app_class: str,
     output_path: str,
     stub_dex: bytes | None = None,
 ) -> None:
     """
-    Inject stub DEX, encrypted payload DEX, and metadata into the APK.
-
-    - classes.dex  → replaced by stub_dex (StubApplication + helpers)
-    - assets/encrypted.dex → AES-GCM encrypted original classes.dex
-    - assets/original_app_class.txt → original Application class name
+    Inject into the APK:
+      classes.dex                  ← stub DEX (StubApplication)
+      assets/encrypted.dex         ← AES-GCM encrypted original classes.dex
+      assets/key.bin               ← AES key bytes
+      assets/original_app_class.txt ← original Application class name
     """
     if stub_dex is None:
         from stub_dex import get_stub_dex
@@ -43,12 +40,12 @@ def inject_encrypted_dex(
     ):
         for item in zin.infolist():
             if item.filename == "classes.dex":
-                continue  # Will be replaced by stub below
+                continue
             zout.writestr(item, zin.read(item.filename))
 
-        # Stub becomes the new classes.dex — Android loads it on startup
         zout.writestr("classes.dex", stub_dex)
         zout.writestr(ENCRYPTED_DEX_ASSET, encrypted_dex)
+        zout.writestr(KEY_ASSET, key)
         zout.writestr(ORIGINAL_APP_META_ASSET, original_app_class.encode())
 
     with open(output_path, "wb") as f:
@@ -90,7 +87,7 @@ def sign_apk(apk_path: str, keystore: str, key_alias: str, store_pass: str, key_
 
 
 def create_debug_keystore(keystore_path: str) -> dict:
-    """Create a temporary debug keystore for testing. Do not use in production."""
+    """Create a temporary debug keystore. Do not use in production."""
     alias = "fuin_debug"
     password = "android"
     result = subprocess.run(

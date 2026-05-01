@@ -1,76 +1,73 @@
 # fuin
 
-Android DEX Packer — encrypt an APK's DEX at rest and protect it with server-managed keys.
+Android DEX Packer — protect your APK's bytecode from static analysis via web-based packing.
 
 ## Overview
 
-fuin takes an ordinary Android APK, encrypts its `classes.dex` with AES-256-GCM, and replaces
-the original Application class with a lightweight stub. At runtime the stub fetches the
-decryption key from a key-management server over HTTPS, decrypts the DEX in memory, loads it
-with `DexClassLoader`, then hands control back to the original Application. The key never
-touches the device's permanent storage.
+Upload an APK through the web API (or CLI). fuin encrypts `classes.dex` with AES-256-GCM,
+embeds the key and ciphertext inside the APK itself, and replaces the Application class with
+a minimal stub. At runtime the stub decrypts the DEX in memory and hands control back to the
+original app — no network calls, no servers required at launch.
+
+The protection goal is **static analysis resistance**: an attacker extracting the APK sees
+only ciphertext, not runnable bytecode.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  Pack time (server-side via POST /pack, or CLI fuin-pack)       │
-│                                                                 │
-│  Original APK                                                   │
-│      │                                                          │
-│      ▼                                                          │
-│  1. Patch AndroidManifest.xml                                   │
-│       android:name → com.fuin.stub.StubApplication              │
-│      │                                                          │
-│      ▼                                                          │
-│  2. Encrypt classes.dex  (AES-256-GCM, random key per APK)     │
-│      │                                                          │
-│      ▼                                                          │
-│  3. Inject into APK                                             │
-│       classes.dex                ← stub DEX (StubApplication)  │
-│       assets/encrypted.dex       ← ciphertext                  │
-│       assets/original_app_class.txt ← original class name      │
-│      │                                                          │
-│      ▼                                                          │
-│  4. zipalign → apksigner                                        │
-│      │                                                          │
-│      ▼                                                          │
-│  5. Register (package_name, AES key, APK SHA-256) in server DB │
-│                                                                 │
-│  Protected APK ───────────────────────────────────────────────►│
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  Pack time  (POST /pack  or  fuin-pack pack)                │
+│                                                             │
+│  Original APK                                               │
+│      │                                                      │
+│      ▼                                                      │
+│  1. Patch AndroidManifest.xml                               │
+│       android:name → com.fuin.stub.StubApplication          │
+│      │                                                      │
+│      ▼                                                      │
+│  2. Encrypt classes.dex  (AES-256-GCM, random key)         │
+│      │                                                      │
+│      ▼                                                      │
+│  3. Inject into APK                                         │
+│       classes.dex                ← stub DEX                 │
+│       assets/encrypted.dex       ← ciphertext               │
+│       assets/key.bin             ← AES key                  │
+│       assets/original_app_class.txt                         │
+│      │                                                      │
+│      ▼                                                      │
+│  4. zipalign → apksigner                                    │
+│                                                             │
+│  Protected APK ────────────────────────────────────────────►│
+└─────────────────────────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────────────┐
-│  Runtime (on device)                                            │
-│                                                                 │
-│  StubApplication.attachBaseContext()                            │
-│      │                                                          │
-│      ▼  (background thread)                                     │
-│  POST /key  { app_id, device_id (ANDROID_ID), apk_signature }  │
-│      │   Server verifies: not revoked, signature matches        │
-│      ▼                                                          │
-│  AES-256-GCM decrypt  assets/encrypted.dex  →  plaintext DEX  │
-│      │                                                          │
-│      ▼                                                          │
-│  DexClassLoader  loads original classes from plaintext DEX      │
-│      │                                                          │
-│      ▼                                                          │
-│  ApplicationSwap  replaces stub with original Application       │
-│      │                                                          │
-│      ▼                                                          │
-│  original Application.onCreate()  →  normal app launch         │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  Runtime (on device — no network required)                  │
+│                                                             │
+│  StubApplication.attachBaseContext()                        │
+│      │                                                      │
+│      ▼                                                      │
+│  Read assets/key.bin + assets/encrypted.dex                 │
+│      │                                                      │
+│      ▼                                                      │
+│  AES-256-GCM decrypt → plaintext DEX (memory only)         │
+│      │                                                      │
+│      ▼                                                      │
+│  DexClassLoader loads original classes                      │
+│      │                                                      │
+│      ▼                                                      │
+│  ApplicationSwap replaces stub → original Application       │
+│      │                                                      │
+│      ▼                                                      │
+│  original Application.onCreate() → normal app launch       │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Features
 
-- **Key never on disk** — AES key lives only in server DB and device RAM during decryption
-- **Static analysis resistant** — extracted APK contains only ciphertext; no plaintext DEX
-- **Tamper detection** — server validates APK SHA-256 signature on every key request
-- **Device blocking** — any `ANDROID_ID` can be blocked server-side without an app update
-- **Key revocation** — `DELETE /apps/{app_id}` instantly stops all new launches
+- **Static analysis resistant** — APK contains only ciphertext; no plaintext DEX
+- **No network at runtime** — key is bundled in the APK, launch works fully offline
+- **Web-based packing** — upload via REST API, download protected APK instantly
 - **Zero app changes** — original APK is packed as-is; no source modifications required
-- **HTTPS enforced** — stub rejects non-HTTPS server URLs at runtime
 
 ## Repository Structure
 
@@ -79,7 +76,6 @@ fuin/
 ├── config.py               # Shared config (env vars / .env)
 ├── .env.example            # Template — copy to .env and fill in values
 ├── pyproject.toml          # uv project — all Python dependencies
-├── uv.lock
 ├── .pre-commit-config.yaml # ruff lint/format + general checks
 │
 ├── packer/                 # Python packer (CLI + library)
@@ -87,22 +83,19 @@ fuin/
 │   ├── crypto.py           # AES-256-GCM encrypt / decrypt
 │   ├── manifest.py         # Binary AXML patcher
 │   ├── apk.py              # APK repack, zipalign, apksigner
-│   ├── stub_dex.py         # Stub DEX builder / locator
-│   └── server_client.py    # Key server HTTP client
+│   └── stub_dex.py         # Stub DEX builder / locator
 │
-├── server/                 # FastAPI key management server
+├── server/                 # FastAPI packer server
 │   ├── main.py             # HTTP endpoints  (fuin-server)
-│   ├── database.py         # SQLAlchemy / SQLite models
+│   ├── database.py         # SQLAlchemy / SQLite
 │   ├── models.py           # Pydantic request/response models
 │   └── packer_pipeline.py  # Server-side pack pipeline
 │
 └── stub/                   # Android stub (Kotlin, minSdk 24)
     └── app/src/main/java/com/fuin/stub/
-        ├── StubApplication.kt   # attachBaseContext — orchestrates boot
+        ├── StubApplication.kt   # Decrypts DEX and swaps Application
         ├── Crypto.kt            # AES-256-GCM decryption (javax.crypto)
-        ├── KeyServerClient.kt   # HTTPS key request (HttpsURLConnection)
-        ├── ApplicationSwap.kt   # Reflection-based Application hot-swap
-        └── SignatureHelper.kt   # APK signature SHA-256 (API 28+ aware)
+        └── ApplicationSwap.kt   # Reflection-based Application hot-swap
 ```
 
 ## Requirements
@@ -137,34 +130,29 @@ All secrets are read from environment variables (or `.env`). See [.env.example](
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `FUIN_API_KEY` | Yes (server) | Admin API key for server endpoints |
-| `FUIN_KEYSTORE_PATH` | No | Path to signing keystore (debug keystore used if unset) |
+| `FUIN_API_KEY` | Yes | API key for server endpoints |
+| `FUIN_KEYSTORE_PATH` | No | Signing keystore path (debug keystore used if unset) |
 | `FUIN_KEYSTORE_ALIAS` | No | Key alias (default: `fuin`) |
 | `FUIN_KEYSTORE_STORE_PASS` | No | Keystore password |
 | `FUIN_KEYSTORE_KEY_PASS` | No | Key password |
 | `FUIN_PACKED_DIR` | No | Output dir for packed APKs (default: `./packed_apks`) |
 | `FUIN_DATABASE_URL` | No | SQLAlchemy DB URL (default: `sqlite:///./fuin.db`) |
-| `FUIN_SERVER_URL` | No | Key server URL used by packer CLI |
 
 ## Usage
 
-### Option A — Server-side (recommended)
-
-Start the server:
+### Option A — Server (recommended)
 
 ```bash
 uv run fuin-server
-# Listening on http://0.0.0.0:8000
 ```
 
-Upload an APK for packing:
+Upload and pack:
 
 ```bash
 curl -X POST http://localhost:8000/pack \
   -H "X-API-Key: $FUIN_API_KEY" \
-  -F "file=@MyApp.apk" \
-  -F "app_class=com.example.MyApplication"   # optional, auto-detected
-# → { "app_id": "...", "package_name": "...", "apk_signature": "...", "analysis": {...} }
+  -F "file=@MyApp.apk"
+# → { "app_id": "...", "package_name": "...", ... }
 ```
 
 Download the protected APK:
@@ -178,34 +166,29 @@ curl -OJ http://localhost:8000/apps/{app_id}/download \
 
 ```bash
 uv run fuin-pack pack input.apk output_protected.apk
-# Add --verbose for debug-level logging
 ```
 
 ### Stub DEX
 
 The packer needs a compiled stub DEX. Resolution order:
 
-1. `FUIN_STUB_DEX=/path/to/stub.dex` environment variable
-2. `packer/stub.dex` pre-built artifact (committed or cached after first build)
-3. Auto-build: `stub/gradlew assembleRelease` + `d8` (requires `ANDROID_HOME`)
+1. `FUIN_STUB_DEX=/path/to/stub.dex` env var
+2. `packer/stub.dex` pre-built artifact
+3. Auto-build via `stub/gradlew assembleRelease` + `d8` (requires `ANDROID_HOME`)
 
 ## Server API
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/pack` | API key | Upload APK → pack → return app_id |
-| `GET` | `/apps/{app_id}/download` | API key | Download protected APK |
-| `GET` | `/apps` | API key | List all registered apps |
-| `POST` | `/apps` | API key | Register a manually packed APK |
-| `DELETE` | `/apps/{app_id}` | API key | Revoke key (blocks all new launches) |
-| `POST` | `/devices/block?device_id=...` | API key | Block a specific device ID |
-| `POST` | `/key` | — | Runtime: device requests decryption key |
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/pack` | Upload APK → pack → return app_id |
+| `GET` | `/apps/{app_id}/download` | Download protected APK |
+| `GET` | `/apps` | List all packed apps |
+| `DELETE` | `/apps/{app_id}` | Delete a packed app |
 
-Authentication uses the `X-API-Key` header. Set `FUIN_API_KEY` in `.env`.
+All endpoints require `X-API-Key` header.
 
 ## Security Notes
 
-- Deploy the server over HTTPS in production; the stub enforces HTTPS at runtime.
-- The debug keystore is for testing only — set `FUIN_KEYSTORE_*` vars for release builds.
-- `ANDROID_ID` can be spoofed on rooted devices. Consider adding Play Integrity API attestation for higher assurance.
-- The binary AXML patcher in `manifest.py` is best-effort. For production, use [apktool](https://apktool.org/) or [androguard](https://github.com/androguard/androguard) for robust manifest manipulation.
+- The AES key is stored inside the APK (`assets/key.bin`). This protects against **static analysis** but not against a determined attacker with a rooted device who can read app assets at runtime.
+- Use a real signing keystore (`FUIN_KEYSTORE_*`) for release builds — the debug keystore is for testing only.
+- The binary AXML patcher in `manifest.py` is best-effort. For production, use [apktool](https://apktool.org/) or [androguard](https://github.com/androguard/androguard).

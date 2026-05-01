@@ -1,11 +1,11 @@
 """
-SQLite-backed storage for registered APKs and allowed devices.
+SQLite-backed storage for packed APKs.
 """
 
 import uuid
 from collections.abc import Generator
 
-from sqlalchemy import Boolean, Column, DateTime, String, create_engine, func
+from sqlalchemy import Column, DateTime, String, create_engine, func
 from sqlalchemy.orm import DeclarativeBase, Session
 
 
@@ -18,18 +18,8 @@ class App(Base):
 
     app_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     package_name = Column(String, nullable=False)
-    key_hex = Column(String, nullable=False)
     apk_signature = Column(String, nullable=False)
     packed_apk_path = Column(String, nullable=True)
-    revoked = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, server_default=func.now())
-
-
-class DeviceBlock(Base):
-    __tablename__ = "device_blocks"
-
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    device_id = Column(String, nullable=False, unique=True)
     created_at = Column(DateTime, server_default=func.now())
 
 
