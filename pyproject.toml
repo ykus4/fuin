@@ -1,0 +1,44 @@
+[project]
+name = "fuin"
+version = "0.1.0"
+description = "Android DEX Packer — packer + key management server"
+requires-python = ">=3.12"
+dependencies = [
+    # packer
+    "cryptography>=42.0.0",
+    "requests>=2.31.0",
+    "lxml>=5.1.0",
+    # server
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.29.0",
+    "sqlalchemy>=2.0.0",
+    "pydantic>=2.7.0",
+    "python-jose[cryptography]>=3.3.0",
+    "python-dotenv>=1.2.2",
+]
+
+[project.scripts]
+fuin-pack   = "packer.main:main"
+fuin-server = "server.main:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["packer", "server"]
+include = ["config.py"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.0",
+    "ruff>=0.15.12",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
