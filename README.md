@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
-[![CI](https://github.com/yotti/fuin/actions/workflows/ci.yml/badge.svg)](https://github.com/yotti/fuin/actions/workflows/ci.yml)
+[![CI](https://github.com/ykus4/fuin/actions/workflows/ci.yml/badge.svg)](https://github.com/ykus4/fuin/actions/workflows/ci.yml)
 
 Upload an APK → get back a protected APK where `classes.dex` is AES-256-GCM encrypted.
 No source changes. No network at runtime. Works fully offline.
@@ -76,7 +76,7 @@ No source changes. No network at runtime. Works fully offline.
 ### Docker (recommended)
 
 ```bash
-git clone https://github.com/yotti/fuin.git && cd fuin
+git clone https://github.com/ykus4/fuin.git && cd fuin
 cp .env.example .env          # set FUIN_API_KEY to any secret string
 docker compose up --build
 ```
