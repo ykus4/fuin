@@ -15,3 +15,12 @@ repos:
       - id: check-toml
       - id: check-merge-conflict
       - id: debug-statements
+
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: uv run pytest tests/ -q --tb=short
+        language: system
+        pass_filenames: false
+        always_run: true
