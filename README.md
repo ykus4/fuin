@@ -18,41 +18,62 @@ No source changes. No network at runtime. Works fully offline.
 
 ## How it works
 
-```
-┌──────────────────────────────────────────────────┐
-│                    PACK TIME                     │
-│                                                  │
-│  your.apk                                        │
-│      │                                           │
-│      ├─ 1. Patch AndroidManifest                 │
-│      │       android:name → StubApplication      │
-│      │                                           │
-│      ├─ 2. Encrypt  classes.dex  (AES-256-GCM)   │
-│      │                                           │
-│      ├─ 3. Inject into APK                       │
-│      │       classes.dex        ← stub DEX       │
-│      │       assets/encrypted.dex  ← ciphertext  │
-│      │       assets/key.bin        ← AES key     │
-│      │                                           │
-│      └─ 4. zipalign → apksigner                  │
-│                                                  │
-│  protected.apk  ✓                                │
-└──────────────────────────────────────────────────┘
+### Pack time
 
-┌──────────────────────────────────────────────────┐
-│              RUNTIME  (on-device)                │
-│                                                  │
-│  StubApplication.attachBaseContext()             │
-│      │                                           │
-│      ├─ Read  assets/key.bin + encrypted.dex     │
-│      ├─ AES-256-GCM decrypt → plaintext DEX      │
-│      │                         (memory only)     │
-│      ├─ DexClassLoader loads original classes    │
-│      └─ Hot-swap stub → original Application     │
-│                                                  │
-│  Original app launches normally  ✓               │
-└──────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    classDef input  fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
+    classDef step   fill:#fef9c3,stroke:#f59e0b,color:#422006
+    classDef output fill:#dcfce7,stroke:#22c55e,color:#14532d
+
+    subgraph IN["📦 your.apk"]
+        direction TB
+        A1["AndroidManifest.xml"]:::input
+        A2["classes.dex\n― plaintext bytecode ―"]:::input
+        A3["res/  assets/  lib/  …"]:::input
+    end
+
+    subgraph FUIN["⚙️  fuin"]
+        direction TB
+        P1["① Patch AXML\nandroid:name → StubApplication"]:::step
+        P2["② AES-256-GCM encrypt\n256-bit key  ·  96-bit nonce"]:::step
+        P3["③ Inject stub DEX\n+ encrypted assets"]:::step
+        P4["④ zipalign + apksign"]:::step
+        P1 --> P2 --> P3 --> P4
+    end
+
+    subgraph OUT["🔒 protected.apk"]
+        direction TB
+        B1["AndroidManifest.xml\n(android:name patched)"]:::output
+        B2["classes.dex  ← stub only"]:::output
+        B3["assets/encrypted.dex\nnonce ‖ ciphertext ‖ GCM tag"]:::output
+        B4["assets/key.bin\n256-bit AES key"]:::output
+        B5["res/  assets/  lib/  …\n(unchanged)"]:::output
+    end
+
+    IN --> FUIN --> OUT
 ```
+
+### Runtime (on-device, no network required)
+
+```mermaid
+flowchart TD
+    classDef sys   fill:#f3e8ff,stroke:#a855f7,color:#3b0764
+    classDef crypto fill:#fef9c3,stroke:#f59e0b,color:#422006
+    classDef final fill:#dcfce7,stroke:#22c55e,color:#14532d
+
+    LAUNCH([App launch]):::sys
+    STUB["StubApplication\nattachBaseContext()"]:::sys
+    READ["Read assets/key.bin\n+ assets/encrypted.dex"]:::sys
+    DECRYPT["AES-256-GCM decrypt\n→ plaintext DEX\n(memory + codeCacheDir, chmod 0600)"]:::crypto
+    LOAD["DexClassLoader\nload original classes"]:::sys
+    SWAP["ApplicationSwap\nreflection hot-swap\nstub → original Application"]:::sys
+    DONE(["original onCreate()\n✅ normal app launch"]):::final
+
+    LAUNCH --> STUB --> READ --> DECRYPT --> LOAD --> SWAP --> DONE
+```
+
+> The decrypted DEX is written only to `codeCacheDir` (app-private sandbox, inaccessible to other apps) with owner-read-only permissions. It never touches external storage.
 
 ## Demo
 
