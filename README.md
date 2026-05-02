@@ -229,6 +229,13 @@ fuin/
 │       ├── pipeline.py     # Pack pipeline
 │       ├── jobs.py         # Async job store (SSE)
 │       └── static/index.html  # Web UI
+├── tests/                  # pytest suite
+│   ├── conftest.py         # Shared fixtures (minimal APK, AXML builder)
+│   ├── test_crypto.py      # AES-256-GCM roundtrip + tamper detection
+│   ├── test_manifest.py    # AXML patcher
+│   ├── test_apk.py         # inject, zipalign
+│   ├── test_pipeline.py    # End-to-end pack pipeline
+│   └── test_server.py      # FastAPI endpoints
 ├── stub/                   # Android stub (Kotlin, minSdk 24)
 │   └── app/src/main/java/com/fuin/stub/
 │       ├── StubApplication.kt
