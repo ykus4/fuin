@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 
 FUIN_DIR = Path(__file__).parent
 STUB_DIR = FUIN_DIR.parent / "stub"
-PREBUILT_DEX = FUIN_DIR / "stub.dex"
+PREBUILT_DEX = FUIN_DIR.parent / "assets" / "stub.dex"
 
 
 def get_stub_dex() -> bytes:
