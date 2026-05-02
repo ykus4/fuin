@@ -13,8 +13,7 @@ build/
 # uv.lock is committed so Docker builds can use --frozen
 
 # fuin runtime artifacts
-packed_apks/
-fuin.db
+data/
 fuin/stub.dex
 
 # Android / Gradle
