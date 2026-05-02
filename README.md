@@ -16,42 +16,60 @@ No source changes. No network at runtime. Works fully offline.
 
 ---
 
-## How it works
+## Pack time
+
+fuin processes your APK once — via the web UI, REST API, or CLI. The original APK is never modified in-place; a brand-new protected APK is produced.
 
 ```
-┌──────────────────────────────────────────────────┐
-│                    PACK TIME                     │
-│                                                  │
-│  your.apk                                        │
-│      │                                           │
-│      ├─ 1. Patch AndroidManifest                 │
-│      │       android:name → StubApplication      │
-│      │                                           │
-│      ├─ 2. Encrypt  classes.dex  (AES-256-GCM)   │
-│      │                                           │
-│      ├─ 3. Inject into APK                       │
-│      │       classes.dex        ← stub DEX       │
-│      │       assets/encrypted.dex  ← ciphertext  │
-│      │       assets/key.bin        ← AES key     │
-│      │                                           │
-│      └─ 4. zipalign → apksigner                  │
-│                                                  │
-│  protected.apk  ✓                                │
-└──────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  📦 PACK TIME  (server or CLI)                                  │
+│                                                                 │
+│  your.apk                                                       │
+│      │                                                          │
+│      ├─ 📝 1. Patch AndroidManifest.xml  (binary AXML)          │
+│      │         android:name → com.fuin.stub.StubApplication     │
+│      │                                                          │
+│      ├─ 🔐 2. Encrypt  classes.dex  (AES-256-GCM)               │
+│      │         key   = os.urandom(32)  ← 256-bit, fresh each run│
+│      │         nonce = os.urandom(12)  ← 96-bit                 │
+│      │         output = nonce ‖ ciphertext ‖ GCM tag (16B)      │
+│      │                                                          │
+│      ├─ 🔧 3. Rebuild APK                                       │
+│      │         classes.dex             ← stub DEX only          │
+│      │         assets/encrypted.dex    ← ciphertext             │
+│      │         assets/key.bin          ← AES key                │
+│      │         assets/original_app_class.txt                    │
+│      │         (all other files untouched)                      │
+│      │                                                          │
+│      └─ ✅ 4. zipalign → apksigner                              │
+│                                                                 │
+│  🔒 protected.apk  (no plaintext bytecode — only ciphertext)   │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-┌──────────────────────────────────────────────────┐
-│              RUNTIME  (on-device)                │
-│                                                  │
-│  StubApplication.attachBaseContext()             │
-│      │                                           │
-│      ├─ Read  assets/key.bin + encrypted.dex     │
-│      ├─ AES-256-GCM decrypt → plaintext DEX      │
-│      │                         (memory only)     │
-│      ├─ DexClassLoader loads original classes    │
-│      └─ Hot-swap stub → original Application     │
-│                                                  │
-│  Original app launches normally  ✓               │
-└──────────────────────────────────────────────────┘
+## Runtime
+
+When the app launches on the end user's device, the stub decrypts the original bytecode silently in memory — no network call, no visible delay.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  📱 RUNTIME  (on-device, no network required)                   │
+│                                                                 │
+│  StubApplication.attachBaseContext()                            │
+│      │                                                          │
+│      ├─ 📖 Read  assets/key.bin  +  assets/encrypted.dex        │
+│      │                                                          │
+│      ├─ 🔓 AES-256-GCM decrypt → plaintext DEX                  │
+│      │       written to codeCacheDir  (chmod 0600)              │
+│      │       never touches external storage                     │
+│      │                                                          │
+│      ├─ ⚙️  DexClassLoader  loads original classes              │
+│      │                                                          │
+│      └─ 🔄 ApplicationSwap  (reflection-based hot-swap)         │
+│              stub Application → original Application            │
+│                                                                 │
+│  🚀 original Application.onCreate()  →  normal app launch      │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Demo
