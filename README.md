@@ -234,6 +234,8 @@ fuin/
 │       ├── StubApplication.kt
 │       ├── Crypto.kt
 │       └── ApplicationSwap.kt
+├── assets/
+│   └── stub.dex            # pre-built stub DEX (committed)
 ├── .env.example
 ├── docker-compose.yml
 └── Dockerfile
