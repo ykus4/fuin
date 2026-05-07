@@ -206,7 +206,76 @@ def build_parser() -> argparse.ArgumentParser:
         "--encrypt-strings", action="store_true", help="Enable DEX string obfuscation"
     )
 
+    # --- analyze subcommand ---
+    analyze_p = sub.add_parser("analyze", help="Preview what will be encrypted in an APK")
+    analyze_p.add_argument("input", help="Input APK path")
+    analyze_p.add_argument("--json", action="store_true", help="Output as JSON")
+
     return parser
+
+
+def analyze(args: argparse.Namespace) -> None:
+    """Preview encryption targets without actually packing."""
+    from fuin.analyze import analyze_targets
+
+    result = analyze_targets(args.input)
+
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        _print_analysis(result)
+
+
+def _print_analysis(result: dict) -> None:
+    """Pretty-print analysis results."""
+    print("=== Fuin Encryption Analysis ===")
+    print()
+
+    # DEX files
+    dex = result["dex"]
+    print(f"DEX files ({len(dex['files'])} total, {_fmt_size(dex['total_size'])}):")
+    for f in dex["files"]:
+        print(f"  ✓ {f['name']}  ({_fmt_size(f['size'])})")
+    print()
+
+    # Native libraries
+    native = result["native_libs"]
+    if native["files"]:
+        print(
+            f"Native libraries ({len(native['files'])} total, {_fmt_size(native['total_size'])}):"
+        )
+        for f in native["files"]:
+            print(f"  ✓ {f['name']}  ({_fmt_size(f['size'])})")
+    else:
+        print("Native libraries: none found")
+    print()
+
+    # Assets
+    assets = result["assets"]
+    if assets["files"]:
+        print(f"User assets ({len(assets['files'])} total, {_fmt_size(assets['total_size'])}):")
+        for f in assets["files"]:
+            print(f"  ✓ {f['name']}  ({_fmt_size(f['size'])})")
+    else:
+        print("User assets: none found")
+    print()
+
+    # Summary
+    summary = result["summary"]
+    print("--- Summary ---")
+    print(f"  Total encryptable files: {summary['total_files']}")
+    print(f"  Total encryptable size:  {_fmt_size(summary['total_size'])}")
+    print(f"  APK total size:          {_fmt_size(summary['apk_size'])}")
+    print(f"  Protection coverage:     {summary['coverage_percent']:.1f}% of APK content")
+
+
+def _fmt_size(size: int) -> str:
+    if size < 1024:
+        return f"{size} B"
+    elif size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
+    else:
+        return f"{size / (1024 * 1024):.1f} MB"
 
 
 def main() -> None:
@@ -220,6 +289,8 @@ def main() -> None:
 
     if args.command == "pack":
         pack(args)
+    elif args.command == "analyze":
+        analyze(args)
 
 
 if __name__ == "__main__":
