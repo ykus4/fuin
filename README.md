@@ -34,14 +34,23 @@ fuin processes your APK once — via the web UI, REST API, or CLI. The original 
 │      │         nonce = os.urandom(12)  ← 96-bit                 │
 │      │         output = nonce ‖ ciphertext ‖ GCM tag (16B)      │
 │      │                                                          │
-│      ├─ 🔧 3. Rebuild APK                                       │
-│      │         classes.dex             ← stub DEX only          │
-│      │         assets/encrypted.dex    ← ciphertext             │
-│      │         assets/key.bin          ← AES key                │
-│      │         assets/original_app_class.txt                    │
-│      │         (all other files untouched)                      │
+│      ├─ 🛡️ 3. Additional protections                            │
+│      │         native libs (.so)  → encrypted                   │
+│      │         user assets        → encrypted                   │
+│      │         DEX strings        → XOR obfuscated (opt-in)     │
+│      │         cert fingerprint   → embedded (anti-tamper)      │
+│      │         security policy    → root/emulator detection     │
 │      │                                                          │
-│      └─ ✅ 4. zipalign → apksigner                              │
+│      ├─ 🔧 4. Rebuild APK                                       │
+│      │         classes.dex                  ← stub DEX only     │
+│      │         assets/encrypted.dex         ← ciphertext        │
+│      │         assets/key.bin               ← AES key           │
+│      │         assets/cert_fingerprint.bin  ← anti-tamper       │
+│      │         assets/encrypted_libs/*      ← native libs       │
+│      │         assets/encrypted_res/*       ← user assets       │
+│      │         assets/security_policy.json  ← runtime policy    │
+│      │                                                          │
+│      └─ ✅ 5. zipalign → apksigner → report                     │
 │                                                                 │
 │  🔒 protected.apk  (no plaintext bytecode — only ciphertext)   │
 └─────────────────────────────────────────────────────────────────┘
@@ -57,11 +66,20 @@ When the app launches on the end user's device, the stub decrypts the original b
 │                                                                 │
 │  StubApplication.attachBaseContext()                            │
 │      │                                                          │
+│      ├─ 🛡️ IntegrityCheck  — verify APK signing cert            │
+│      │                                                          │
+│      ├─ 🛡️ SecurityCheck   — root / emulator detection          │
+│      │                                                          │
 │      ├─ 📖 Read  assets/key.bin  +  assets/encrypted.dex        │
+│      │                                                          │
+│      ├─ 🔧 NativeLibDecryptor  — decrypt .so files              │
+│      │                                                          │
+│      ├─ 🔧 DecryptingAssetManager  — decrypt user assets        │
 │      │                                                          │
 │      ├─ 🔓 AES-256-GCM decrypt → plaintext DEX                  │
 │      │       written to codeCacheDir  (chmod 0600)              │
-│      │       never touches external storage                     │
+│      │                                                          │
+│      ├─ 🔤 StringDecryptor  — de-obfuscate DEX strings          │
 │      │                                                          │
 │      ├─ ⚙️  DexClassLoader  loads original classes              │
 │      │                                                          │
@@ -82,10 +100,18 @@ When the app launches on the end user's device, the stub decrypts the original b
 |---|---|
 | 🔐 **Static analysis resistant** | APK contains only ciphertext — no runnable bytecode |
 | 📴 **Fully offline** | Key is bundled in the APK, no network needed at launch |
+| 🛡️ **Anti-tamper** | Verifies signing certificate at runtime — re-signed APKs refuse to run |
+| 🚫 **Root/emulator detection** | Blocks execution on rooted devices or emulators |
+| 📦 **Native lib encryption** | .so files encrypted alongside DEX — full binary protection |
+| 🗂️ **Asset encryption** | User assets (images, configs, databases) encrypted at rest |
+| 🔤 **String obfuscation** | DEX string constants XOR-encrypted to resist `strings` dumps |
 | 🌐 **Web UI + REST API** | Upload via browser or `curl`, download protected APK instantly |
 | ⚡ **CLI support** | One-command local packing with `fuin-pack` |
 | 🐳 **Docker-first** | No local Android SDK needed — everything runs in the image |
 | 🔄 **SSE progress** | Real-time pack progress streamed to the browser |
+| 📊 **Pack report** | Diff report showing size changes, encrypted targets, and metadata |
+| 🔌 **Gradle plugin** | Auto-pack after `assembleRelease` with one DSL block |
+| 🤖 **GitHub Actions** | Composite action for CI/CD pipelines |
 
 ---
 
@@ -165,7 +191,103 @@ curl -OJ http://localhost:8000/apps/{app_id}/download \
 ### CLI
 
 ```bash
+# Basic usage
 uv run fuin-pack pack input.apk output_protected.apk
+
+# Full protection with all options
+uv run fuin-pack pack input.apk output.apk \
+  --root-detection \
+  --emulator-detection \
+  --encrypt-strings \
+  --report
+
+# Disable specific protections
+uv run fuin-pack pack input.apk output.apk \
+  --no-native-encrypt \
+  --no-resource-encrypt
+```
+
+**CLI flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--report` | Print human-readable pack diff report |
+| `--report-json` | Print pack diff report as JSON |
+| `--root-detection` | Enable root detection at runtime |
+| `--emulator-detection` | Enable emulator detection at runtime |
+| `--encrypt-strings` | Enable DEX string obfuscation |
+| `--no-native-encrypt` | Disable native library (.so) encryption |
+| `--no-resource-encrypt` | Disable asset/resource encryption |
+| `--keystore` | Signing keystore path |
+| `--key-alias` | Key alias |
+| `--store-pass` | Keystore password |
+| `--key-pass` | Key password |
+
+---
+
+## Gradle Plugin
+
+Add fuin protection to your Android build pipeline with a single DSL block.
+
+```kotlin
+// settings.gradle.kts
+pluginManagement {
+    includeBuild("path/to/fuin/gradle-plugin")
+}
+
+// app/build.gradle.kts
+plugins {
+    id("com.fuin.packer")
+}
+
+fuin {
+    enabled.set(true)
+
+    // CLI mode (default)
+    cliPath.set("/usr/local/bin/fuin-pack")
+
+    // OR server mode
+    // serverUrl.set("http://localhost:8000")
+    // apiKey.set("your-api-key")
+
+    // Signing
+    keystore.set(file("release.keystore").absolutePath)
+    keystoreAlias.set("release")
+    keystorePassword.set(System.getenv("STORE_PASS"))
+    keyPassword.set(System.getenv("KEY_PASS"))
+
+    // Protection options
+    rootDetection.set(true)
+    emulatorDetection.set(true)
+    encryptStrings.set(false)       // opt-in (slight runtime overhead)
+    encryptNativeLibs.set(true)     // default: true
+    encryptResources.set(true)      // default: true
+}
+```
+
+After configuration, packing happens automatically after `assembleRelease`:
+
+```bash
+./gradlew assembleRelease   # → fuinPack runs automatically
+```
+
+---
+
+## GitHub Actions
+
+```yaml
+- name: Pack APK with fuin
+  uses: ykus4/fuin@main
+  with:
+    input-apk: app/build/outputs/apk/release/app-release.apk
+    output-apk: app/build/outputs/apk/release/app-release-packed.apk
+    keystore-base64: ${{ secrets.KEYSTORE_BASE64 }}
+    keystore-alias: release
+    keystore-password: ${{ secrets.STORE_PASS }}
+    key-password: ${{ secrets.KEY_PASS }}
+    root-detection: "true"
+    emulator-detection: "true"
+    encrypt-strings: "false"
 ```
 
 ---
@@ -210,6 +332,9 @@ Copy `.env.example` → `.env` and set at minimum `FUIN_API_KEY`.
 | `FUIN_MAX_UPLOAD_MB` | No | `500` | Max APK upload size (MB) |
 | `FUIN_CLEANUP_DAYS` | No | `30` | Auto-delete packed APKs older than N days (`0` = off) |
 | `FUIN_WEBHOOK_URL` | No | — | POST to this URL when a pack job completes |
+| `FUIN_ROOT_DETECTION` | No | `false` | Enable root detection (server pipeline) |
+| `FUIN_EMULATOR_DETECTION` | No | `false` | Enable emulator detection (server pipeline) |
+| `FUIN_ENCRYPT_STRINGS` | No | `false` | Enable DEX string encryption (server pipeline) |
 
 ---
 
@@ -217,32 +342,50 @@ Copy `.env.example` → `.env` and set at minimum `FUIN_API_KEY`.
 
 ```
 fuin/
-├── fuin/                   # Python package
-│   ├── config.py           # Config (env vars / .env)
-│   ├── cli.py              # fuin-pack CLI
-│   ├── crypto.py           # AES-256-GCM
-│   ├── manifest.py         # Binary AXML patcher
-│   ├── apk.py              # APK repack + zipalign + apksigner
-│   ├── stub_dex.py         # Stub DEX locator
-│   └── server/             # FastAPI server
-│       ├── main.py         # HTTP endpoints (fuin-server)
-│       ├── pipeline.py     # Pack pipeline
-│       ├── jobs.py         # Async job store (SSE)
+├── fuin/                      # Python package
+│   ├── config.py              # Config (env vars / .env)
+│   ├── cli.py                 # fuin-pack CLI
+│   ├── crypto.py              # AES-256-GCM
+│   ├── manifest.py            # Binary AXML patcher
+│   ├── apk.py                 # APK repack + zipalign + apksigner
+│   ├── integrity.py           # Anti-tamper: cert fingerprint extraction
+│   ├── native_lib.py          # Native library (.so) encryption
+│   ├── resource_encrypt.py    # Asset/resource encryption
+│   ├── string_encrypt.py      # DEX string XOR obfuscation
+│   ├── report.py              # Pack diff report generation
+│   ├── stub_dex.py            # Stub DEX locator
+│   └── server/                # FastAPI server
+│       ├── main.py            # HTTP endpoints (fuin-server)
+│       ├── pipeline.py        # Pack pipeline
+│       ├── jobs.py            # Async job store (SSE)
+│       ├── models.py          # Pydantic response models
 │       └── static/index.html  # Web UI
-├── tests/                  # pytest suite
-│   ├── conftest.py         # Shared fixtures (minimal APK, AXML builder)
-│   ├── test_crypto.py      # AES-256-GCM roundtrip + tamper detection
-│   ├── test_manifest.py    # AXML patcher
-│   ├── test_apk.py         # inject, zipalign
-│   ├── test_pipeline.py    # End-to-end pack pipeline
-│   └── test_server.py      # FastAPI endpoints
-├── stub/                   # Android stub (Kotlin, minSdk 24)
+├── tests/                     # pytest suite
+│   ├── conftest.py            # Shared fixtures (minimal APK, AXML builder)
+│   ├── test_crypto.py         # AES-256-GCM roundtrip + tamper detection
+│   ├── test_manifest.py       # AXML patcher
+│   ├── test_apk.py            # inject, zipalign
+│   ├── test_pipeline.py       # End-to-end pack pipeline
+│   └── test_server.py         # FastAPI endpoints
+├── stub/                      # Android stub (Kotlin, minSdk 24)
 │   └── app/src/main/java/com/fuin/stub/
-│       ├── StubApplication.kt
-│       ├── Crypto.kt
-│       └── ApplicationSwap.kt
+│       ├── StubApplication.kt      # Entry point: orchestrates all decryption
+│       ├── Crypto.kt                # AES-256-GCM decryption
+│       ├── ApplicationSwap.kt      # Reflection-based app hot-swap
+│       ├── IntegrityCheck.kt       # Anti-tamper: cert verification
+│       ├── SecurityCheck.kt        # Root/emulator detection
+│       ├── NativeLibDecryptor.kt   # .so file decryption + lib path patching
+│       ├── DecryptingAssetManager.kt  # Encrypted asset decryption
+│       └── StringDecryptor.kt      # DEX string de-obfuscation
+├── gradle-plugin/             # Gradle plugin for build integration
+│   ├── build.gradle.kts
+│   └── src/main/kotlin/com/fuin/gradle/
+│       ├── FuinPlugin.kt      # Plugin entry point
+│       ├── FuinExtension.kt   # DSL configuration
+│       └── FuinPackTask.kt    # Pack task implementation
+├── action.yml                 # GitHub Actions composite action
 ├── assets/
-│   └── stub.dex            # pre-built stub DEX (committed)
+│   └── stub.dex               # pre-built stub DEX (committed)
 ├── .env.example
 ├── docker-compose.yml
 └── Dockerfile
@@ -250,9 +393,28 @@ fuin/
 
 ---
 
+## Protection layers
+
+fuin provides multiple layers of protection that work together:
+
+| Layer | Static Analysis | Dynamic Analysis | Reverse Engineering |
+|-------|:-:|:-:|:-:|
+| DEX encryption (AES-256-GCM) | ✅ Blocks | — | Slows |
+| Native lib encryption | ✅ Blocks | — | Slows |
+| Asset encryption | ✅ Blocks | — | Slows |
+| String obfuscation | ✅ Blocks `strings` | — | Slows |
+| Anti-tamper (cert check) | — | ✅ Prevents re-signing | ✅ Prevents patching |
+| Root detection | — | ✅ Blocks rooted devices | ✅ Blocks Frida/Xposed |
+| Emulator detection | — | ✅ Blocks emulators | — |
+
+---
+
 ## Security notes
 
 - The AES key lives inside the APK (`assets/key.bin`). This defeats **static analysis** but not a determined attacker with a rooted device who can read app assets at runtime.
+- Anti-tamper verifies the signing certificate, preventing APK re-signing and modification.
+- Root/emulator detection provides a baseline defense against dynamic instrumentation (Frida, Xposed). Determined attackers can bypass these with Magisk Hide or custom ROMs.
+- String encryption adds overhead to every string access — use selectively for sensitive strings.
 - Use a real signing keystore (`FUIN_KEYSTORE_*`) for release builds.
 - The binary AXML patcher (`fuin/manifest.py`) is best-effort. For production, consider [apktool](https://apktool.org/).
 

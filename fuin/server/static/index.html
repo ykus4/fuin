@@ -81,6 +81,90 @@
     .dropzone p { color: var(--muted); line-height: 1.6; }
     .dropzone p strong { color: var(--text); }
 
+    /* File analysis panel */
+    #analyze-section { display: none; margin-top: 24px; }
+    .analyze-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+    }
+    .analyze-card h3 { font-size: 15px; margin-bottom: 16px; color: var(--accent); }
+    .analyze-loading { color: var(--muted); font-size: 13px; padding: 16px 0; text-align: center; }
+
+    .file-category { margin-bottom: 16px; }
+    .file-category-header {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 8px; padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .file-category-header h4 { font-size: 13px; font-weight: 600; }
+    .file-category-header .badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--surface2);
+      color: var(--muted);
+    }
+    .select-all-btn {
+      margin-left: auto;
+      background: none; border: none;
+      color: var(--muted); font-size: 11px;
+      cursor: pointer; text-decoration: underline;
+    }
+    .select-all-btn:hover { color: var(--text); }
+
+    .file-list { display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow-y: auto; }
+    .file-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      transition: background .1s;
+    }
+    .file-item:hover { background: var(--surface2); }
+    .file-item input[type=checkbox] {
+      width: 16px; height: 16px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    .file-item label {
+      flex: 1;
+      font-size: 12px;
+      font-family: monospace;
+      cursor: pointer;
+      color: var(--text);
+    }
+    .file-item .file-size {
+      font-size: 11px;
+      color: var(--muted);
+      min-width: 60px;
+      text-align: right;
+    }
+
+    /* Protection options */
+    .protection-options { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+    .protection-options h4 { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+    .option-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    @media (max-width: 600px) { .option-checks { grid-template-columns: 1fr; } }
+    .option-check {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: var(--surface2);
+      cursor: pointer;
+    }
+    .option-check input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+    .option-check span { font-size: 12px; }
+
+    /* Summary bar */
+    .analyze-summary {
+      margin-top: 16px; padding-top: 12px;
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 12px; color: var(--muted);
+    }
+    .analyze-summary .selected-count { color: var(--text); font-weight: 500; }
+
     /* Options grid */
     .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
     @media (max-width: 600px) { .options-grid { grid-template-columns: 1fr; } }
@@ -166,7 +250,6 @@
     .result-card h3 { font-size: 15px; margin-bottom: 14px; color: var(--green); }
     .result-card h3.error-title { color: var(--red); }
 
-    /* Info grid for analysis */
     .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
     @media (max-width: 500px) { .info-grid { grid-template-columns: 1fr; } }
     .info-cell {
@@ -183,12 +266,7 @@
       padding: 0; transition: color .15s;
     }
     .perms-section .perms-toggle:hover { color: var(--text); }
-    .perms-list {
-      margin-top: 8px;
-      display: none;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
+    .perms-list { margin-top: 8px; display: none; flex-wrap: wrap; gap: 6px; }
     .perms-list.open { display: flex; }
     .perm-tag {
       font-size: 11px;
@@ -220,7 +298,6 @@
     }
     .download-btn:hover { opacity: .85; }
 
-    /* Divider */
     .divider { border: none; border-top: 1px solid var(--border); margin: 36px 0; }
 
     /* Apps list */
@@ -268,13 +345,11 @@
     }
     .refresh-btn:hover { color: var(--text); }
 
-    /* Mapping upload */
     .mapping-upload { margin-top: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .mapping-upload input[type=file] { font-size: 12px; color: var(--muted); flex: 1; min-width: 0; }
     .mapping-upload .btn-sm { flex-shrink: 0; }
     .mapping-status { font-size: 11px; color: var(--green); margin-top: 4px; display: none; }
 
-    /* SDK badges */
     .sdk-badge {
       display: inline-block;
       padding: 2px 7px;
@@ -292,7 +367,7 @@
 
   <header>
     <h1><span>fuin</span> — Android DEX Packer</h1>
-    <p>Upload an APK. Get a static-analysis-resistant APK back.</p>
+    <p>Upload an APK. Select what to encrypt. Get a protected APK back.</p>
   </header>
 
   <!-- API Key -->
@@ -308,6 +383,16 @@
     <p><strong>Drop your APK here</strong><br/>or click to browse</p>
   </div>
 
+  <!-- Analyze section (file selection) -->
+  <div id="analyze-section">
+    <div class="analyze-card">
+      <h3>Encryption Targets</h3>
+      <div id="analyze-content">
+        <div class="analyze-loading">Analyzing APK...</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Options -->
   <div class="options-grid">
     <div class="option-row">
@@ -320,7 +405,7 @@
     </div>
   </div>
 
-  <button class="pack-btn" id="pack-btn" onclick="startPack()">Pack APK</button>
+  <button class="pack-btn" id="pack-btn" onclick="startPack()" disabled>Pack APK</button>
 
   <!-- Progress -->
   <div id="progress-section">
@@ -360,6 +445,7 @@ const STEPS = [
   { id: "injecting",          label: "Injecting into APK" },
   { id: "aligning",           label: "Running zipalign" },
   { id: "signing",            label: "Signing APK (v1 + v2)" },
+  { id: "reporting",          label: "Generating report" },
   { id: "saving",             label: "Saving packed APK" },
   { id: "done",               label: "Done" },
 ];
@@ -377,6 +463,7 @@ const DANGEROUS_PERMS = new Set([
 ]);
 
 let selectedFile = null;
+let analysisResult = null;
 
 // ── API key persistence ────────────────────────────────────────────────────
 function getKey() { return localStorage.getItem("fuin_api_key") || ""; }
@@ -409,6 +496,135 @@ function setFile(f) {
   selectedFile = f;
   dz.querySelector("p").innerHTML =
     `<strong>${escHtml(f.name)}</strong><br/>${(f.size / 1024 / 1024).toFixed(2)} MB`;
+  analyzeFile(f);
+}
+
+// ── Analyze ───────────────────────────────────────────────────────────────
+async function analyzeFile(file) {
+  const key = getKey();
+  if (!key) { alert("Set your API key first."); return; }
+
+  document.getElementById("analyze-section").style.display = "block";
+  document.getElementById("analyze-content").innerHTML = '<div class="analyze-loading">Analyzing APK...</div>';
+  document.getElementById("pack-btn").disabled = true;
+
+  const fd = new FormData();
+  fd.append("file", file);
+
+  try {
+    const res = await fetch("/analyze", { method: "POST", headers: { "X-API-Key": key }, body: fd });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || res.statusText); }
+    analysisResult = await res.json();
+    renderAnalysis(analysisResult);
+    document.getElementById("pack-btn").disabled = false;
+  } catch (err) {
+    document.getElementById("analyze-content").innerHTML =
+      `<div style="color:var(--red);font-size:13px">Analysis failed: ${escHtml(err.message)}</div>`;
+  }
+}
+
+function renderAnalysis(data) {
+  const content = document.getElementById("analyze-content");
+  let html = '';
+
+  // DEX files (always encrypted, shown as info)
+  if (data.dex.files.length) {
+    html += renderFileCategory('dex', 'DEX Files', data.dex.files, true, false);
+  }
+
+  // Native libraries
+  if (data.native_libs.files.length) {
+    html += renderFileCategory('native', 'Native Libraries (.so)', data.native_libs.files, true, true);
+  }
+
+  // User assets
+  if (data.assets.files.length) {
+    html += renderFileCategory('assets', 'User Assets', data.assets.files, true, true);
+  }
+
+  // Protection options
+  html += `
+    <div class="protection-options">
+      <h4>Runtime Protection</h4>
+      <div class="option-checks">
+        <label class="option-check">
+          <input type="checkbox" id="opt-root-detection" />
+          <span>Root detection</span>
+        </label>
+        <label class="option-check">
+          <input type="checkbox" id="opt-emulator-detection" />
+          <span>Emulator detection</span>
+        </label>
+        <label class="option-check">
+          <input type="checkbox" id="opt-encrypt-strings" />
+          <span>String obfuscation</span>
+        </label>
+        <label class="option-check">
+          <input type="checkbox" id="opt-anti-tamper" checked />
+          <span>Anti-tamper (cert check)</span>
+        </label>
+      </div>
+    </div>
+  `;
+
+  // Summary
+  html += `
+    <div class="analyze-summary">
+      <span id="selection-summary"></span>
+      <span style="color:var(--muted)">APK: ${fmtSize(data.summary.apk_size)}</span>
+    </div>
+  `;
+
+  content.innerHTML = html;
+  updateSelectionSummary();
+}
+
+function renderFileCategory(id, title, files, checkedByDefault, selectable) {
+  const badge = `${files.length} files · ${fmtSize(files.reduce((s, f) => s + f.size, 0))}`;
+  let html = `<div class="file-category">`;
+  html += `<div class="file-category-header">
+    <h4>${escHtml(title)}</h4>
+    <span class="badge">${badge}</span>`;
+  if (selectable) {
+    html += `<button class="select-all-btn" onclick="toggleCategory('${id}')">toggle all</button>`;
+  }
+  html += `</div><div class="file-list">`;
+
+  for (const f of files) {
+    const checkId = `file-${id}-${f.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const checked = checkedByDefault ? 'checked' : '';
+    const disabled = selectable ? '' : 'checked disabled';
+    html += `
+      <div class="file-item">
+        <input type="checkbox" id="${checkId}" data-category="${id}" data-filename="${escHtml(f.name)}" ${disabled || checked} onchange="updateSelectionSummary()" />
+        <label for="${checkId}">${escHtml(f.name)}</label>
+        <span class="file-size">${fmtSize(f.size)}</span>
+      </div>`;
+  }
+
+  html += `</div></div>`;
+  return html;
+}
+
+function toggleCategory(category) {
+  const boxes = document.querySelectorAll(`input[data-category="${category}"]`);
+  const allChecked = Array.from(boxes).every(b => b.checked);
+  boxes.forEach(b => { b.checked = !allChecked; });
+  updateSelectionSummary();
+}
+
+function updateSelectionSummary() {
+  const allBoxes = document.querySelectorAll('#analyze-content input[type=checkbox][data-filename]');
+  const checked = Array.from(allBoxes).filter(b => b.checked);
+  const el = document.getElementById("selection-summary");
+  if (el) {
+    el.innerHTML = `<span class="selected-count">${checked.length}</span> / ${allBoxes.length} files selected for encryption`;
+  }
+}
+
+function getExcludedFiles() {
+  const boxes = document.querySelectorAll('#analyze-content input[type=checkbox][data-filename]:not(:checked):not(:disabled)');
+  return Array.from(boxes).map(b => b.dataset.filename);
 }
 
 // ── Pack ───────────────────────────────────────────────────────────────────
@@ -430,6 +646,23 @@ async function startPack() {
   if (appClass) fd.append("app_class", appClass);
   const webhookUrl = document.getElementById("webhook-url").value.trim();
   if (webhookUrl) fd.append("webhook_url", webhookUrl);
+
+  // Encryption options
+  const excluded = getExcludedFiles();
+  if (excluded.length) fd.append("exclude_files", excluded.join(","));
+
+  const hasNative = document.querySelectorAll('input[data-category="native"]:checked').length > 0;
+  const hasAssets = document.querySelectorAll('input[data-category="assets"]:checked').length > 0;
+  fd.append("encrypt_native", hasNative);
+  fd.append("encrypt_assets", hasAssets);
+
+  // Protection options
+  const rootDet = document.getElementById("opt-root-detection")?.checked || false;
+  const emuDet = document.getElementById("opt-emulator-detection")?.checked || false;
+  const strEnc = document.getElementById("opt-encrypt-strings")?.checked || false;
+  fd.append("root_detection", rootDet);
+  fd.append("emulator_detection", emuDet);
+  fd.append("encrypt_strings", strEnc);
 
   let jobId;
   try {
@@ -533,6 +766,23 @@ function showResult(result) {
 
   const permsHtml = renderPermsHtml(a.permissions || []);
 
+  // Pack report info
+  const report = result.report;
+  const reportHtml = report ? `
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;margin-bottom:8px">Pack Report</div>
+      <div class="info-grid">
+        <div class="info-cell">
+          <div class="ic-label">Size Change</div>
+          <div class="ic-val">${fmtSize(report.size.before)} → ${fmtSize(report.size.after)} (${report.size.delta_percent > 0 ? '+' : ''}${report.size.delta_percent}%)</div>
+        </div>
+        <div class="info-cell">
+          <div class="ic-label">Encrypted</div>
+          <div class="ic-val">${report.encrypted_targets.count} DEX + ${report.injected_assets.length} assets</div>
+        </div>
+      </div>
+    </div>` : '';
+
   card.innerHTML = `
     <h3>✓ Packing complete</h3>
     <div class="info-grid">
@@ -552,21 +802,12 @@ function showResult(result) {
         </div>
       </div>
       <div class="info-cell">
-        <div class="ic-label">Components</div>
-        <div class="ic-val" style="color:var(--muted);font-size:12px">
-          ${a.activities || 0}A · ${a.services || 0}S · ${a.receivers || 0}R · ${a.providers || 0}P
-        </div>
-      </div>
-      <div class="info-cell">
         <div class="ic-label">DEX</div>
         <div class="ic-val">${escHtml(dexInfo)}</div>
       </div>
-      <div class="info-cell">
-        <div class="ic-label">Size</div>
-        <div class="ic-val">${(a.file_size_bytes / 1024 / 1024).toFixed(2)} MB</div>
-      </div>
     </div>
     ${permsHtml}
+    ${reportHtml}
     ${metaRow("SHA-256", result.apk_signature.substring(0, 32) + "…")}
     <button class="download-btn" onclick="downloadApp('${result.app_id}','${escHtml(result.package_name)}')">
       ⬇ Download packed APK
@@ -769,6 +1010,12 @@ async function deleteApp(appId) {
 // ── Helpers ────────────────────────────────────────────────────────────────
 function escHtml(s) {
   return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB';
 }
 </script>
 </body>

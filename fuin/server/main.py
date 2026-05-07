@@ -29,6 +29,7 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from fuin import config
+from fuin.analyze import analyze_targets
 from fuin.server.database import App, JobRecord, init_db, make_engine, make_get_session
 from fuin.server.jobs import JobStatus, create_job, get_job
 from fuin.server.models import AppInfo, PackResult
@@ -114,11 +115,44 @@ def serve_ui():
     return HTMLResponse(html_path.read_text())
 
 
+@app.post("/analyze", dependencies=[Depends(verify_api_key)])
+async def analyze_apk_targets(
+    file: UploadFile = File(...),
+):
+    """Upload APK → return list of encryptable files (for UI preview)."""
+    if not file.filename or not file.filename.endswith(".apk"):
+        raise HTTPException(status_code=400, detail="File must be an .apk")
+
+    apk_bytes = await file.read()
+
+    if len(apk_bytes) < 4 or apk_bytes[:4] != b"PK\x03\x04":
+        raise HTTPException(
+            status_code=400, detail="File does not appear to be a valid APK (invalid ZIP header)"
+        )
+
+    with tempfile.NamedTemporaryFile(suffix=".apk", delete=False) as tmp:
+        tmp.write(apk_bytes)
+        tmp_path = tmp.name
+
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, analyze_targets, tmp_path)
+        return result
+    finally:
+        os.unlink(tmp_path)
+
+
 @app.post("/pack", dependencies=[Depends(verify_api_key)])
 async def pack_apk(
     file: UploadFile = File(...),
     app_class: str = Form(default=""),
     webhook_url: str = Form(default=""),
+    exclude_files: str = Form(default=""),
+    encrypt_native: bool = Form(default=True),
+    encrypt_assets: bool = Form(default=True),
+    encrypt_strings: bool = Form(default=False),
+    root_detection: bool = Form(default=False),
+    emulator_detection: bool = Form(default=False),
 ):
     """Upload APK → start background job → return job_id immediately."""
     if not file.filename or not file.filename.endswith(".apk"):
@@ -169,7 +203,7 @@ async def pack_apk(
                 job.push({"status": "running", "step": step, "pct": pct})
                 _db_update_job(job.job_id, status="running", step=step, pct=pct)
 
-            packed_path, apk_sig = await loop.run_in_executor(
+            packed_path, apk_sig, pack_report = await loop.run_in_executor(
                 None,
                 lambda: run_pipeline(tmp_path, app_class=app_class or None, progress=_progress),
             )
@@ -194,6 +228,7 @@ async def pack_apk(
                 package_name=entry.package_name,
                 apk_signature=apk_sig,
                 analysis=analysis,
+                report=pack_report,
             ).model_dump()
 
             job.result = result

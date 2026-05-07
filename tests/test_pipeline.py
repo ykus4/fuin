@@ -16,7 +16,7 @@ def input_apk(tmp_path):
 
 def test_pipeline_produces_apk(input_apk, tmp_path, monkeypatch):
     monkeypatch.setenv("FUIN_PACKED_DIR", str(tmp_path / "packed"))
-    packed_path, sig = run_pipeline(input_apk)
+    packed_path, sig, report = run_pipeline(input_apk)
 
     assert os.path.exists(packed_path)
     assert packed_path.endswith(".apk")
@@ -24,14 +24,14 @@ def test_pipeline_produces_apk(input_apk, tmp_path, monkeypatch):
 
 def test_pipeline_output_is_valid_zip(input_apk, tmp_path, monkeypatch):
     monkeypatch.setenv("FUIN_PACKED_DIR", str(tmp_path / "packed"))
-    packed_path, _ = run_pipeline(input_apk)
+    packed_path, _, _ = run_pipeline(input_apk)
 
     assert zipfile.is_zipfile(packed_path)
 
 
 def test_pipeline_output_has_stub_dex(input_apk, tmp_path, monkeypatch):
     monkeypatch.setenv("FUIN_PACKED_DIR", str(tmp_path / "packed"))
-    packed_path, _ = run_pipeline(input_apk)
+    packed_path, _, _ = run_pipeline(input_apk)
 
     with zipfile.ZipFile(packed_path) as z:
         names = z.namelist()
@@ -46,7 +46,7 @@ def test_pipeline_original_dex_not_in_output(input_apk, tmp_path, monkeypatch):
     with zipfile.ZipFile(input_apk) as z:
         original_dex = z.read("classes.dex")
 
-    packed_path, _ = run_pipeline(input_apk)
+    packed_path, _, _ = run_pipeline(input_apk)
 
     with zipfile.ZipFile(packed_path) as z:
         assert z.read("classes.dex") != original_dex
@@ -54,7 +54,7 @@ def test_pipeline_original_dex_not_in_output(input_apk, tmp_path, monkeypatch):
 
 def test_pipeline_returns_sha256(input_apk, tmp_path, monkeypatch):
     monkeypatch.setenv("FUIN_PACKED_DIR", str(tmp_path / "packed"))
-    _, sig = run_pipeline(input_apk)
+    _, sig, _ = run_pipeline(input_apk)
 
     assert len(sig) == 64  # SHA-256 hex
     assert all(c in "0123456789abcdef" for c in sig)

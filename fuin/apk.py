@@ -14,6 +14,12 @@ from pathlib import Path
 ENCRYPTED_DEX_ASSET = "assets/encrypted.dex"
 # Extra DEX files (classes2.dex, classes3.dex, ...) are bundled into a ZIP and stored here
 ENCRYPTED_EXTRA_DEX_ASSET = "assets/encrypted_extra.dex"
+CERT_FINGERPRINT_ASSET = "assets/cert_fingerprint.bin"
+SECURITY_POLICY_ASSET = "assets/security_policy.json"
+NATIVE_LIB_MANIFEST_ASSET = "assets/native_lib_manifest.json"
+ENCRYPTED_LIBS_PREFIX = "assets/encrypted_libs/"
+ENCRYPTED_RES_PREFIX = "assets/encrypted_res/"
+RES_MAP_ASSET = "assets/res_map.json"
 
 
 def _find_build_tool(name: str) -> str:
@@ -46,14 +52,28 @@ def inject_encrypted_dex(
     output_path: str,
     stub_dex: bytes | None = None,
     encrypted_extra_dex: bytes | None = None,
+    cert_fingerprint: bytes | None = None,
+    security_policy: bytes | None = None,
+    encrypted_libs: dict[str, bytes] | None = None,
+    native_lib_manifest: bytes | None = None,
+    encrypted_resources: dict[str, bytes] | None = None,
+    res_map: bytes | None = None,
+    strip_patterns: list[str] | None = None,
+    string_key: bytes | None = None,
 ) -> None:
     """
     Inject into the APK:
-      classes.dex                   ← stub DEX (StubApplication)
-      assets/encrypted.dex          ← AES-GCM encrypted original classes.dex
-      assets/encrypted_extra.dex    ← ZIP of encrypted classes2.dex, classes3.dex, ... (if any)
-      assets/key.bin                ← AES key bytes (same key for all DEX files)
-      assets/original_app_class.txt ← original Application class name
+      classes.dex                   <- stub DEX (StubApplication)
+      assets/encrypted.dex          <- AES-GCM encrypted original classes.dex
+      assets/encrypted_extra.dex    <- ZIP of encrypted classes2.dex, classes3.dex, ... (if any)
+      assets/key.bin                <- AES key bytes (same key for all DEX files)
+      assets/original_app_class.txt <- original Application class name
+      assets/cert_fingerprint.bin   <- signing cert SHA-256 (anti-tamper)
+      assets/security_policy.json   <- runtime security policy (root/emulator detection)
+      assets/encrypted_libs/*       <- encrypted native libraries
+      assets/native_lib_manifest.json <- native lib metadata
+      assets/encrypted_res/*        <- encrypted resources/assets
+      assets/res_map.json           <- resource mapping
     """
     if stub_dex is None:
         from fuin.stub_dex import get_stub_dex
@@ -63,6 +83,9 @@ def inject_encrypted_dex(
     # DEX filenames to strip from the original APK (classes.dex + classesN.dex)
     dex_pattern = re.compile(r"^classes\d*\.dex$")
 
+    # Patterns to strip (e.g. lib/**/*.so when encrypting native libs)
+    _strip_patterns = [re.compile(p) for p in (strip_patterns or [])]
+
     buf = io.BytesIO()
     with (
         zipfile.ZipFile(apk_path, "r") as zin,
@@ -70,6 +93,8 @@ def inject_encrypted_dex(
     ):
         for item in zin.infolist():
             if dex_pattern.match(item.filename):
+                continue
+            if any(p.match(item.filename) for p in _strip_patterns):
                 continue
             zout.writestr(item, zin.read(item.filename))
 
@@ -79,6 +104,22 @@ def inject_encrypted_dex(
         zout.writestr(ORIGINAL_APP_META_ASSET, original_app_class.encode())
         if encrypted_extra_dex is not None:
             zout.writestr(ENCRYPTED_EXTRA_DEX_ASSET, encrypted_extra_dex)
+        if cert_fingerprint is not None:
+            zout.writestr(CERT_FINGERPRINT_ASSET, cert_fingerprint)
+        if security_policy is not None:
+            zout.writestr(SECURITY_POLICY_ASSET, security_policy)
+        if native_lib_manifest is not None:
+            zout.writestr(NATIVE_LIB_MANIFEST_ASSET, native_lib_manifest)
+        if encrypted_libs:
+            for name, data in encrypted_libs.items():
+                zout.writestr(f"{ENCRYPTED_LIBS_PREFIX}{name}", data)
+        if res_map is not None:
+            zout.writestr(RES_MAP_ASSET, res_map)
+        if encrypted_resources:
+            for name, data in encrypted_resources.items():
+                zout.writestr(f"{ENCRYPTED_RES_PREFIX}{name}", data)
+        if string_key:
+            zout.writestr("assets/string_key.bin", string_key)
 
     with open(output_path, "wb") as f:
         f.write(buf.getvalue())

@@ -6,6 +6,7 @@ class PackResult(BaseModel):
     package_name: str
     apk_signature: str
     analysis: dict
+    report: dict | None = None
 
 
 class RegisterAppResponse(BaseModel):
