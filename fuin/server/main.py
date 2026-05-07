@@ -169,7 +169,7 @@ async def pack_apk(
                 job.push({"status": "running", "step": step, "pct": pct})
                 _db_update_job(job.job_id, status="running", step=step, pct=pct)
 
-            packed_path, apk_sig = await loop.run_in_executor(
+            packed_path, apk_sig, pack_report = await loop.run_in_executor(
                 None,
                 lambda: run_pipeline(tmp_path, app_class=app_class or None, progress=_progress),
             )
@@ -194,6 +194,7 @@ async def pack_apk(
                 package_name=entry.package_name,
                 apk_signature=apk_sig,
                 analysis=analysis,
+                report=pack_report,
             ).model_dump()
 
             job.result = result

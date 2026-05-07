@@ -1,0 +1,117 @@
+name: "Fuin APK Packer"
+description: "Pack and encrypt an Android APK with fuin to protect against static analysis"
+branding:
+  icon: "shield"
+  color: "purple"
+
+inputs:
+  input-apk:
+    description: "Path to the input APK file"
+    required: true
+  output-apk:
+    description: "Path for the packed output APK"
+    required: true
+  keystore-base64:
+    description: "Base64-encoded PKCS12 keystore for signing"
+    required: false
+  keystore-alias:
+    description: "Key alias in the keystore"
+    required: false
+    default: "fuin"
+  keystore-password:
+    description: "Keystore password"
+    required: false
+  key-password:
+    description: "Key password"
+    required: false
+  root-detection:
+    description: "Enable root detection (true/false)"
+    required: false
+    default: "false"
+  emulator-detection:
+    description: "Enable emulator detection (true/false)"
+    required: false
+    default: "false"
+  encrypt-strings:
+    description: "Enable DEX string encryption (true/false)"
+    required: false
+    default: "false"
+  no-native-encrypt:
+    description: "Disable native library encryption (true/false)"
+    required: false
+    default: "false"
+  no-resource-encrypt:
+    description: "Disable resource/asset encryption (true/false)"
+    required: false
+    default: "false"
+  python-version:
+    description: "Python version to use"
+    required: false
+    default: "3.12"
+
+outputs:
+  packed-apk:
+    description: "Path to the packed APK"
+    value: ${{ inputs.output-apk }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+
+    - name: Install fuin
+      shell: bash
+      run: |
+        cd ${{ github.action_path }}
+        uv sync
+
+    - name: Decode keystore
+      if: inputs.keystore-base64 != ''
+      shell: bash
+      run: |
+        echo "${{ inputs.keystore-base64 }}" | base64 -d > /tmp/fuin_release.keystore
+
+    - name: Run fuin-pack
+      shell: bash
+      env:
+        FUIN_KEYSTORE_PATH: ${{ inputs.keystore-base64 != '' && '/tmp/fuin_release.keystore' || '' }}
+        FUIN_KEYSTORE_ALIAS: ${{ inputs.keystore-alias }}
+        FUIN_KEYSTORE_STORE_PASS: ${{ inputs.keystore-password }}
+        FUIN_KEYSTORE_KEY_PASS: ${{ inputs.key-password }}
+      run: |
+        cd ${{ github.action_path }}
+
+        ARGS="pack ${{ inputs.input-apk }} ${{ inputs.output-apk }}"
+
+        if [ "${{ inputs.root-detection }}" = "true" ]; then
+          ARGS="$ARGS --root-detection"
+        fi
+
+        if [ "${{ inputs.emulator-detection }}" = "true" ]; then
+          ARGS="$ARGS --emulator-detection"
+        fi
+
+        if [ "${{ inputs.encrypt-strings }}" = "true" ]; then
+          ARGS="$ARGS --encrypt-strings"
+        fi
+
+        if [ "${{ inputs.no-native-encrypt }}" = "true" ]; then
+          ARGS="$ARGS --no-native-encrypt"
+        fi
+
+        if [ "${{ inputs.no-resource-encrypt }}" = "true" ]; then
+          ARGS="$ARGS --no-resource-encrypt"
+        fi
+
+        uv run fuin-pack $ARGS --report
+
+    - name: Clean up keystore
+      if: always() && inputs.keystore-base64 != ''
+      shell: bash
+      run: rm -f /tmp/fuin_release.keystore

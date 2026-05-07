@@ -14,7 +14,20 @@ class StubApplication : Application() {
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
 
+        // Anti-tamper: verify signing certificate before decryption
+        IntegrityCheck.verify(base)
+
+        // Root/emulator detection
+        SecurityCheck.enforce(base)
+
         val key = base.assets.open("key.bin").readBytes()
+
+        // Decrypt native libraries before loading DEX (libs may be needed during init)
+        NativeLibDecryptor.decryptAndLoad(base, key)
+
+        // Decrypt and prepare encrypted assets
+        DecryptingAssetManager.init(base, key)
+
         val encrypted = base.assets.open("encrypted.dex").readBytes()
         val decryptedDex = Crypto.decryptDex(encrypted, key)
 
@@ -26,6 +39,9 @@ class StubApplication : Application() {
             it.setReadable(false, false)
             it.setReadable(true, true)
         }
+
+        // Decrypt obfuscated strings in primary DEX (if string encryption was applied)
+        StringDecryptor.decryptDexStrings(primaryDex, base)
 
         // Write extra DEX files (classes2.dex, classes3.dex, ...) if present
         val extraDexFiles = mutableListOf<File>()
