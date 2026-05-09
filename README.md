@@ -2,14 +2,16 @@
 
 <img src="docs/logo.png" alt="fuin logo" width="600">
 
-**Android APK Packer — protect bytecode from static analysis**
+**Android APK Packer — protect bytecode, block cheating, resist reverse engineering**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
 [![CI](https://github.com/ykus4/fuin/actions/workflows/ci.yml/badge.svg)](https://github.com/ykus4/fuin/actions/workflows/ci.yml)
 
-Upload an APK → get back a protected APK where `classes.dex` is AES-256-GCM encrypted.
+Protect any Android APK — Unity, Flutter, or standard — against cheating, piracy, and reverse engineering.
+DEX bytecode, native libraries (.so), and assets are encrypted with AES-256-GCM.
+Anti-tamper, root detection, and emulator blocking guard against runtime instrumentation tools like Frida and Xposed.
 No source changes. No network at runtime. Works fully offline.
 
 </div>
@@ -96,15 +98,25 @@ When the app launches on the end user's device, the stub decrypts the original b
 
 ## Features
 
+### Anti-cheat & protection
+
 | | |
 |---|---|
-| 🔐 **Static analysis resistant** | APK contains only ciphertext — no runnable bytecode |
-| 📴 **Fully offline** | Key is bundled in the APK, no network needed at launch |
-| 🛡️ **Anti-tamper** | Verifies signing certificate at runtime — re-signed APKs refuse to run |
-| 🚫 **Root/emulator detection** | Blocks execution on rooted devices or emulators |
-| 📦 **Native lib encryption** | .so files encrypted alongside DEX — full binary protection |
-| 🗂️ **Asset encryption** | User assets (images, configs, databases) encrypted at rest |
-| 🔤 **String obfuscation** | DEX string constants XOR-encrypted to resist `strings` dumps |
+| 🔐 **Static analysis resistant** | APK contains only ciphertext — no runnable bytecode visible to decompilers (jadx, apktool) |
+| 🛡️ **Anti-tamper** | Verifies signing certificate at runtime — re-signed or patched APKs refuse to run |
+| 🚫 **Root detection** | Blocks execution on rooted devices — defeats Magisk-based cheat tools |
+| 📵 **Emulator detection** | Prevents running on emulators — blocks bot farms and automated exploit testing |
+| 🔌 **Frida/Xposed resistant** | Root + emulator checks raise the bar against dynamic instrumentation frameworks |
+| 📦 **Native lib encryption** | .so files (Unity/Unreal game engines, custom C++ libs) encrypted — binary analysis blocked |
+| 🗂️ **Asset encryption** | Game configs, level data, databases encrypted at rest — resist asset extraction |
+| 🔤 **String obfuscation** | DEX string constants XOR-encrypted — resist `strings` dumps and config harvesting |
+| 🎮 **Unity & Flutter support** | Works out of the box with Unity `.so` libs and Flutter engine — no extra config |
+
+### Developer experience
+
+| | |
+|---|---|
+| 📴 **Fully offline** | Key is bundled in the APK — no network call at launch, no external dependency |
 | 🌐 **Web UI + REST API** | Upload via browser or `curl`, download protected APK instantly |
 | ⚡ **CLI support** | One-command local packing with `fuin-pack` |
 | 🐳 **Docker-first** | No local Android SDK needed — everything runs in the image |
@@ -297,10 +309,13 @@ After configuration, packing happens automatically after `assembleRelease`:
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/` | Web UI |
+| `POST` | `/analyze` | Analyze APK — list encryptable files without packing |
 | `POST` | `/pack` | Upload APK → async job → `job_id` |
 | `GET` | `/jobs/{id}/stream` | SSE progress (`text/event-stream`) |
 | `GET` | `/jobs/{id}` | Poll job status |
 | `GET` | `/apps/{id}/download` | Download protected APK |
+| `POST` | `/apps/{id}/mapping/upload` | Upload ProGuard mapping.txt |
+| `GET` | `/apps/{id}/mapping` | Download ProGuard mapping.txt |
 | `GET` | `/apps` | List all packed apps |
 | `DELETE` | `/apps/{id}` | Delete a packed app |
 
@@ -395,17 +410,17 @@ fuin/
 
 ## Protection layers
 
-fuin provides multiple layers of protection that work together:
+fuin stacks multiple independent layers — defeating one does not defeat the others:
 
-| Layer | Static Analysis | Dynamic Analysis | Reverse Engineering |
+| Layer | Static Analysis | Cheating / Tampering | Reverse Engineering |
 |-------|:-:|:-:|:-:|
-| DEX encryption (AES-256-GCM) | ✅ Blocks | — | Slows |
-| Native lib encryption | ✅ Blocks | — | Slows |
-| Asset encryption | ✅ Blocks | — | Slows |
-| String obfuscation | ✅ Blocks `strings` | — | Slows |
-| Anti-tamper (cert check) | — | ✅ Prevents re-signing | ✅ Prevents patching |
-| Root detection | — | ✅ Blocks rooted devices | ✅ Blocks Frida/Xposed |
-| Emulator detection | — | ✅ Blocks emulators | — |
+| DEX encryption (AES-256-GCM) | ✅ Blocks jadx/apktool | — | Slows memory dumping |
+| Native lib encryption | ✅ Blocks IDA/Ghidra | — | Slows binary analysis |
+| Asset encryption | ✅ Blocks asset extraction | — | Slows config harvesting |
+| String obfuscation | ✅ Blocks `strings` dumps | — | Slows constant harvesting |
+| Anti-tamper (cert check) | — | ✅ Blocks APK repacking | ✅ Blocks patch-and-resign |
+| Root detection | — | ✅ Blocks Magisk cheats | ✅ Blocks Frida/Xposed |
+| Emulator detection | — | ✅ Blocks bot farms | ✅ Blocks automated exploit rigs |
 
 ---
 
