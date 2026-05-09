@@ -2,8 +2,6 @@
 
 <img src="docs/logo.png" alt="fuin logo" width="600">
 
-# fuin
-
 **Android APK Packer — protect bytecode from static analysis**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
