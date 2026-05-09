@@ -26,6 +26,7 @@ from pathlib import Path
 import httpx
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from fuin import config
@@ -105,6 +106,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="fuin Packer Server", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
