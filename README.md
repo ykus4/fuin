@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔒 fuin
+<img src="docs/logo.png" alt="fuin logo" width="600">
 
 **Android APK Packer — protect bytecode from static analysis**
 
