@@ -3,7 +3,7 @@ import zipfile
 
 import pytest
 
-from fuin.server.pipeline import run_pipeline
+from fuin.server.pipeline import PipelineOptions, run_pipeline
 from tests.conftest import make_minimal_apk
 
 
@@ -38,6 +38,69 @@ def test_pipeline_output_has_stub_dex(input_apk, tmp_path, monkeypatch):
         assert "classes.dex" in names
         assert "assets/encrypted.dex" in names
         assert "assets/key.bin" in names
+
+
+def test_pipeline_respects_native_and_asset_options(tmp_path, monkeypatch):
+    monkeypatch.setenv("FUIN_PACKED_DIR", str(tmp_path / "packed"))
+    apk = tmp_path / "input.apk"
+    apk.write_bytes(
+        make_minimal_apk(
+            extra_files={
+                "lib/arm64-v8a/libgame.so": b"\x7fELF" + b"\x00" * 16,
+                "assets/config.json": b'{"debug": false}',
+            }
+        )
+    )
+
+    packed_path, _, _ = run_pipeline(
+        str(apk),
+        options=PipelineOptions(encrypt_native=False, encrypt_assets=False),
+    )
+
+    with zipfile.ZipFile(packed_path) as z:
+        names = z.namelist()
+        assert "lib/arm64-v8a/libgame.so" in names
+        assert "assets/config.json" in names
+        assert not any(name.startswith("assets/encrypted_libs/") for name in names)
+        assert not any(name.startswith("assets/encrypted_res/") for name in names)
+
+
+def test_pipeline_respects_exclude_files(tmp_path, monkeypatch):
+    monkeypatch.setenv("FUIN_PACKED_DIR", str(tmp_path / "packed"))
+    apk = tmp_path / "input.apk"
+    apk.write_bytes(
+        make_minimal_apk(
+            extra_files={
+                "assets/public.txt": b"public",
+                "assets/private.txt": b"private",
+            }
+        )
+    )
+
+    packed_path, _, _ = run_pipeline(
+        str(apk),
+        options=PipelineOptions(exclude_files=("assets/public.txt",)),
+    )
+
+    with zipfile.ZipFile(packed_path) as z:
+        names = z.namelist()
+        assert "assets/public.txt" in names
+        assert "assets/private.txt" not in names
+        assert any(name.startswith("assets/encrypted_res/") for name in names)
+
+
+def test_pipeline_writes_security_policy_from_options(input_apk, tmp_path, monkeypatch):
+    monkeypatch.setenv("FUIN_PACKED_DIR", str(tmp_path / "packed"))
+
+    packed_path, _, _ = run_pipeline(
+        input_apk,
+        options=PipelineOptions(root_detection=True, emulator_detection=True),
+    )
+
+    with zipfile.ZipFile(packed_path) as z:
+        policy = z.read("assets/security_policy.json")
+        assert b'"root_detection": true' in policy
+        assert b'"emulator_detection": true' in policy
 
 
 def test_pipeline_original_dex_not_in_output(input_apk, tmp_path, monkeypatch):

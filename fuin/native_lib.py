@@ -11,7 +11,12 @@ import zipfile
 from fuin.crypto import encrypt_dex as encrypt_blob
 
 
-def encrypt_native_libs(apk_path: str, key: bytes) -> dict | None:
+def encrypt_native_libs(
+    apk_path: str,
+    key: bytes,
+    *,
+    exclude_files: set[str] | None = None,
+) -> dict | None:
     """Encrypt native libraries found in the APK.
 
     Returns a dict with:
@@ -21,11 +26,14 @@ def encrypt_native_libs(apk_path: str, key: bytes) -> dict | None:
 
     Returns None if no native libraries are found.
     """
+    exclude_files = exclude_files or set()
     libs: dict[str, bytes] = {}
 
     with zipfile.ZipFile(apk_path, "r") as z:
         for name in z.namelist():
             if name.startswith("lib/") and name.endswith(".so"):
+                if name in exclude_files:
+                    continue
                 libs[name] = z.read(name)
 
     if not libs:

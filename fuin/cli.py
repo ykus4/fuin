@@ -14,7 +14,13 @@ import tempfile
 import zipfile
 
 from fuin import config
-from fuin.apk import create_debug_keystore, inject_encrypted_dex, sign_apk, zipalign
+from fuin.apk import (
+    create_debug_keystore,
+    inject_encrypted_dex,
+    sign_apk,
+    verify_apk_signature,
+    zipalign,
+)
 from fuin.crypto import encrypt_dex, generate_key
 from fuin.integrity import extract_cert_fingerprint
 from fuin.manifest import patch_manifest
@@ -67,6 +73,12 @@ def pack(args: argparse.Namespace) -> None:
             log.info("original Application class: %s", found_class)
         else:
             found_class = ""
+            if args.strict_manifest_patch:
+                raise ValueError(
+                    "AndroidManifest.xml could not be patched with StubApplication. "
+                    "Pass --app-class explicitly or use --no-strict-manifest-patch "
+                    "for best-effort packing."
+                )
 
         # Resolve keystore early (needed for cert fingerprint)
         ks_path = args.keystore or config.KEYSTORE_PATH
@@ -159,6 +171,11 @@ def pack(args: argparse.Namespace) -> None:
 
         log.info("signing APK")
         sign_apk(step3, ks_path, alias, sp, kp)
+        if args.verify_signature:
+            if verify_apk_signature(step3):
+                log.info("verified APK signature with apksigner")
+            else:
+                raise RuntimeError("--verify-signature requires apksigner from Android build-tools")
         shutil.copy(step3, output_apk)
 
     log.info("done: %s", output_apk)
@@ -204,6 +221,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pack_p.add_argument(
         "--encrypt-strings", action="store_true", help="Enable DEX string obfuscation"
+    )
+    pack_p.add_argument(
+        "--no-strict-manifest-patch",
+        dest="strict_manifest_patch",
+        action="store_false",
+        default=config.STRICT_MANIFEST_PATCH,
+        help="Allow best-effort packing when StubApplication cannot be inserted",
+    )
+    pack_p.add_argument(
+        "--verify-signature",
+        action="store_true",
+        default=config.VERIFY_SIGNATURE,
+        help="Run apksigner verify after signing",
     )
 
     # --- analyze subcommand ---
