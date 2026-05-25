@@ -230,6 +230,8 @@ uv run fuin-pack pack input.apk output.apk \
 | `--encrypt-strings` | Enable DEX string obfuscation |
 | `--no-native-encrypt` | Disable native library (.so) encryption |
 | `--no-resource-encrypt` | Disable asset/resource encryption |
+| `--no-strict-manifest-patch` | Allow best-effort packing when the manifest patch cannot be verified |
+| `--verify-signature` | Run `apksigner verify` after signing |
 | `--keystore` | Signing keystore path |
 | `--key-alias` | Key alias |
 | `--store-pass` | Keystore password |
@@ -350,6 +352,8 @@ Copy `.env.example` → `.env` and set at minimum `FUIN_API_KEY`.
 | `FUIN_ROOT_DETECTION` | No | `false` | Enable root detection (server pipeline) |
 | `FUIN_EMULATOR_DETECTION` | No | `false` | Enable emulator detection (server pipeline) |
 | `FUIN_ENCRYPT_STRINGS` | No | `false` | Enable DEX string encryption (server pipeline) |
+| `FUIN_STRICT_MANIFEST_PATCH` | No | `true` | Fail if `StubApplication` cannot be inserted into the manifest |
+| `FUIN_VERIFY_SIGNATURE` | No | `false` | Run `apksigner verify` after signing |
 
 ---
 
@@ -431,7 +435,8 @@ fuin stacks multiple independent layers — defeating one does not defeat the ot
 - Root/emulator detection provides a baseline defense against dynamic instrumentation (Frida, Xposed). Determined attackers can bypass these with Magisk Hide or custom ROMs.
 - String encryption adds overhead to every string access — use selectively for sensitive strings.
 - Use a real signing keystore (`FUIN_KEYSTORE_*`) for release builds.
-- The binary AXML patcher (`fuin/manifest.py`) is best-effort. For production, consider [apktool](https://apktool.org/).
+- The binary AXML patcher (`fuin/manifest.py`) fails closed by default when it cannot confirm that `StubApplication` was inserted. For broader manifest rewriting support, consider [apktool](https://apktool.org/).
+- See [Threat Model](docs/THREAT_MODEL.md) for the exact protection boundaries and recommended release settings.
 
 ---
 

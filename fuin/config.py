@@ -50,3 +50,20 @@ CLEANUP_OLDER_THAN_DAYS: int = int(os.environ.get("FUIN_CLEANUP_DAYS", "30"))
 # ---------------------------------------------------------------------------
 # Optional URL to POST when a pack job completes
 WEBHOOK_URL: str = os.environ.get("FUIN_WEBHOOK_URL", "")
+
+# ---------------------------------------------------------------------------
+# Hardening / validation
+# ---------------------------------------------------------------------------
+# Fail packing if the manifest could not be patched to StubApplication.
+STRICT_MANIFEST_PATCH: bool = os.environ.get("FUIN_STRICT_MANIFEST_PATCH", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
+# Run `apksigner verify` after signing. Requires Android build-tools in PATH or ANDROID_HOME.
+VERIFY_SIGNATURE: bool = os.environ.get("FUIN_VERIFY_SIGNATURE", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)

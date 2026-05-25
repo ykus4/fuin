@@ -34,7 +34,7 @@ from fuin.analyze import analyze_targets
 from fuin.server.database import App, JobRecord, init_db, make_engine, make_get_session
 from fuin.server.jobs import JobStatus, create_job, get_job
 from fuin.server.models import AppInfo, PackResult
-from fuin.server.pipeline import analyze_apk, run_pipeline
+from fuin.server.pipeline import PipelineOptions, analyze_apk, run_pipeline
 
 log = logging.getLogger(__name__)
 
@@ -205,9 +205,23 @@ async def pack_apk(
                 job.push({"status": "running", "step": step, "pct": pct})
                 _db_update_job(job.job_id, status="running", step=step, pct=pct)
 
+            options = PipelineOptions(
+                encrypt_native=encrypt_native,
+                encrypt_assets=encrypt_assets,
+                encrypt_strings=encrypt_strings,
+                root_detection=root_detection,
+                emulator_detection=emulator_detection,
+                exclude_files=tuple(f.strip() for f in exclude_files.split(",") if f.strip()),
+            )
+
             packed_path, apk_sig, pack_report = await loop.run_in_executor(
                 None,
-                lambda: run_pipeline(tmp_path, app_class=app_class or None, progress=_progress),
+                lambda: run_pipeline(
+                    tmp_path,
+                    app_class=app_class or None,
+                    progress=_progress,
+                    options=options,
+                ),
             )
 
             def _save():

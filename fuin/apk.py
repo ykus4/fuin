@@ -256,6 +256,24 @@ def sign_apk(apk_path: str, keystore: str, key_alias: str, store_pass: str, key_
     _sign_apk_v2(apk_path, keystore, store_pass)
 
 
+def verify_apk_signature(apk_path: str) -> bool:
+    """Verify the APK signature with apksigner when Android build-tools are available."""
+    apksigner_bin = _find_build_tool("apksigner")
+    if not Path(apksigner_bin).is_file():
+        return False
+
+    result = subprocess.run(
+        [apksigner_bin, "verify", "--verbose", apk_path],
+        capture_output=True,
+        text=True,
+        env=_apksigner_env(),
+    )
+    if result.returncode != 0:
+        details = result.stderr.strip() or result.stdout.strip()
+        raise RuntimeError(f"apksigner verify failed:\n{details}")
+    return True
+
+
 def _apksigner_env() -> dict:
     """Return the current environment for apksigner subprocess."""
     return os.environ.copy()

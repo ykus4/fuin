@@ -24,7 +24,12 @@ _FUIN_INTERNAL_ASSETS = {
 }
 
 
-def encrypt_resources(apk_path: str, key: bytes) -> dict | None:
+def encrypt_resources(
+    apk_path: str,
+    key: bytes,
+    *,
+    exclude_files: set[str] | None = None,
+) -> dict | None:
     """Encrypt user-facing assets found in the APK.
 
     Only encrypts files under assets/ that are NOT fuin-internal.
@@ -38,6 +43,7 @@ def encrypt_resources(apk_path: str, key: bytes) -> dict | None:
 
     Returns None if no encryptable assets are found.
     """
+    exclude_files = exclude_files or set()
     assets: dict[str, bytes] = {}
 
     with zipfile.ZipFile(apk_path, "r") as z:
@@ -49,6 +55,8 @@ def encrypt_resources(apk_path: str, key: bytes) -> dict | None:
             if name.startswith("assets/encrypted_libs/"):
                 continue
             if name.startswith("assets/encrypted_res/"):
+                continue
+            if name in exclude_files:
                 continue
             assets[name] = z.read(name)
 

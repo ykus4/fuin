@@ -52,3 +52,57 @@ jobs:
         run: uv run pytest tests/ -q --tb=short
         env:
           FUIN_API_KEY: ci-test-key
+
+      - name: CLI smoke
+        run: |
+          uv run python -c "from pathlib import Path; from tests.conftest import make_minimal_apk; Path('smoke.apk').write_bytes(make_minimal_apk())"
+          uv run fuin-pack analyze smoke.apk --json
+
+  gradle-plugin:
+    name: Gradle plugin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build Gradle plugin
+        run: ./stub/gradlew -p gradle-plugin build --no-daemon
+
+  stub:
+    name: Android stub
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build stub AAR
+        run: cd stub && ./gradlew :app:assembleRelease --no-daemon
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v5
+        with:
+          push: false
+          load: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
