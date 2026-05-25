@@ -4,6 +4,8 @@ import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.TaskAction
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
 
 /**
@@ -108,10 +110,7 @@ abstract class FuinPackTask : DefaultTask() {
             .addFormDataPart(
                 "file",
                 input.name,
-                okhttp3.RequestBody.create(
-                    okhttp3.MediaType.parse("application/vnd.android.package-archive"),
-                    input
-                )
+                input.asRequestBody("application/vnd.android.package-archive".toMediaTypeOrNull())
             )
             .addFormDataPart("root_detection", extension.rootDetection.getOrElse(false).toString())
             .addFormDataPart("emulator_detection", extension.emulatorDetection.getOrElse(false).toString())
@@ -128,10 +127,10 @@ abstract class FuinPackTask : DefaultTask() {
 
         val response = client.newCall(request).execute()
         if (!response.isSuccessful) {
-            throw GradleException("Fuin server returned ${response.code()}: ${response.body()?.string()}")
+            throw GradleException("Fuin server returned ${response.code}: ${response.body?.string()}")
         }
 
-        val json = org.json.JSONObject(response.body()!!.string())
+        val json = org.json.JSONObject(response.body!!.string())
         val jobId = json.getString("job_id")
         logger.lifecycle("Fuin: job started: $jobId")
 
@@ -146,7 +145,7 @@ abstract class FuinPackTask : DefaultTask() {
                 .build()
 
             val statusResp = client.newCall(statusReq).execute()
-            val statusJson = org.json.JSONObject(statusResp.body()!!.string())
+            val statusJson = org.json.JSONObject(statusResp.body!!.string())
             val status = statusJson.getString("status")
 
             when (status) {
@@ -159,7 +158,7 @@ abstract class FuinPackTask : DefaultTask() {
                         .get()
                         .build()
                     val dlResp = client.newCall(dlReq).execute()
-                    output.writeBytes(dlResp.body()!!.bytes())
+                    output.writeBytes(dlResp.body!!.bytes())
                     return
                 }
                 "error" -> {
