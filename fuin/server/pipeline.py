@@ -14,9 +14,16 @@ import shutil
 import tempfile
 import zipfile
 from collections.abc import Callable
+from dataclasses import dataclass, field
 
 from fuin import config
-from fuin.apk import create_debug_keystore, inject_encrypted_dex, sign_apk, zipalign
+from fuin.apk import (
+    create_debug_keystore,
+    inject_encrypted_dex,
+    sign_apk,
+    verify_apk_signature,
+    zipalign,
+)
 from fuin.apk_info import get_apk_info
 from fuin.crypto import encrypt_dex, generate_key
 from fuin.integrity import extract_cert_fingerprint
@@ -32,6 +39,18 @@ log = logging.getLogger(__name__)
 ProgressCallback = Callable[[str, int], None]
 
 _EXTRA_DEX_RE = re.compile(r"^classes(\d+)\.dex$")
+
+
+@dataclass(frozen=True)
+class PipelineOptions:
+    encrypt_native: bool = True
+    encrypt_assets: bool = True
+    encrypt_strings: bool = False
+    root_detection: bool = False
+    emulator_detection: bool = False
+    exclude_files: tuple[str, ...] = field(default_factory=tuple)
+    strict_manifest_patch: bool | None = None
+    verify_signature: bool | None = None
 
 
 def _sha256_file(path: str) -> str:
@@ -69,16 +88,16 @@ def _pack_extra_dex(apk_path: str, key: bytes) -> bytes | None:
     return encrypt_dex(bundle, key)
 
 
-def _build_security_policy() -> bytes | None:
-    """Build security_policy.json from environment config."""
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").lower() in ("1", "true", "yes")
+
+
+def _build_security_policy(options: PipelineOptions) -> bytes | None:
+    """Build security_policy.json from explicit options and environment defaults."""
     import json
 
-    root_detection = os.environ.get("FUIN_ROOT_DETECTION", "").lower() in ("1", "true", "yes")
-    emulator_detection = os.environ.get("FUIN_EMULATOR_DETECTION", "").lower() in (
-        "1",
-        "true",
-        "yes",
-    )
+    root_detection = options.root_detection or _env_flag("FUIN_ROOT_DETECTION")
+    emulator_detection = options.emulator_detection or _env_flag("FUIN_EMULATOR_DETECTION")
 
     if not root_detection and not emulator_detection:
         return None
@@ -94,6 +113,7 @@ def run_pipeline(
     input_apk_path: str,
     app_class: str | None = None,
     progress: ProgressCallback | None = None,
+    options: PipelineOptions | None = None,
 ) -> tuple[str, str, dict]:
     """
     Returns:
@@ -102,12 +122,18 @@ def run_pipeline(
     progress(step_name, percent) is called at each stage if provided.
     """
 
+    options = options or PipelineOptions()
+
     def _progress(step: str, pct: int) -> None:
         log.info("%s (%d%%)", step, pct)
         if progress:
             progress(step, pct)
 
     os.makedirs(config.PACKED_APK_DIR, exist_ok=True)
+
+    with zipfile.ZipFile(input_apk_path, "r") as z:
+        if "classes.dex" not in z.namelist():
+            raise ValueError("APK does not contain classes.dex")
 
     _progress("loading_stub", 5)
     stub_dex = get_stub_dex()
@@ -119,6 +145,17 @@ def run_pipeline(
 
         _progress("patching_manifest", 20)
         original_class = patch_manifest(input_apk_path, step1, app_class)
+        strict_manifest_patch = (
+            config.STRICT_MANIFEST_PATCH
+            if options.strict_manifest_patch is None
+            else options.strict_manifest_patch
+        )
+        if strict_manifest_patch and not original_class:
+            raise ValueError(
+                "AndroidManifest.xml could not be patched with StubApplication. "
+                "Provide app_class explicitly or disable FUIN_STRICT_MANIFEST_PATCH "
+                "for best-effort packing."
+            )
 
         # Resolve keystore early (needed for cert fingerprint extraction)
         ks_path = config.KEYSTORE_PATH
@@ -134,15 +171,13 @@ def run_pipeline(
 
         _progress("encrypting_dex", 40)
         with zipfile.ZipFile(input_apk_path, "r") as z:
-            if "classes.dex" not in z.namelist():
-                raise ValueError("APK does not contain classes.dex")
             dex_data = z.read("classes.dex")
 
         key = generate_key()
 
         # String encryption (opt-in via env)
         string_key = None
-        if os.environ.get("FUIN_ENCRYPT_STRINGS", "").lower() in ("1", "true", "yes"):
+        if options.encrypt_strings or _env_flag("FUIN_ENCRYPT_STRINGS"):
             dex_data, string_key = encrypt_dex_strings(dex_data, key)
             log.info("applied string encryption to classes.dex")
 
@@ -163,13 +198,22 @@ def run_pipeline(
                 log.warning("could not extract cert fingerprint: %s", e)
 
         # Security policy
-        security_policy = _build_security_policy()
+        security_policy = _build_security_policy(options)
 
         # Encrypt native libraries
-        native_libs_result = encrypt_native_libs(step1, key)
+        exclude_files = set(options.exclude_files)
+        native_libs_result = (
+            encrypt_native_libs(step1, key, exclude_files=exclude_files)
+            if options.encrypt_native
+            else None
+        )
 
         # Encrypt resources/assets
-        res_result = encrypt_resources(step1, key)
+        res_result = (
+            encrypt_resources(step1, key, exclude_files=exclude_files)
+            if options.encrypt_assets
+            else None
+        )
 
         inject_encrypted_dex(
             step1,
@@ -198,6 +242,19 @@ def run_pipeline(
 
         _progress("signing", 85)
         sign_apk(step3, ks_path, alias, sp, kp)
+        verify_signature = (
+            config.VERIFY_SIGNATURE
+            if options.verify_signature is None
+            else options.verify_signature
+        )
+        if verify_signature:
+            if verify_apk_signature(step3):
+                log.info("verified APK signature with apksigner")
+            else:
+                raise RuntimeError(
+                    "FUIN_VERIFY_SIGNATURE is enabled but apksigner was not found. "
+                    "Install Android build-tools or disable signature verification."
+                )
 
         _progress("saving", 95)
         sig = _sha256_file(step3)

@@ -113,6 +113,11 @@ abstract class FuinPackTask : DefaultTask() {
                     input
                 )
             )
+            .addFormDataPart("root_detection", extension.rootDetection.getOrElse(false).toString())
+            .addFormDataPart("emulator_detection", extension.emulatorDetection.getOrElse(false).toString())
+            .addFormDataPart("encrypt_strings", extension.encryptStrings.getOrElse(false).toString())
+            .addFormDataPart("encrypt_native", extension.encryptNativeLibs.getOrElse(true).toString())
+            .addFormDataPart("encrypt_assets", extension.encryptResources.getOrElse(true).toString())
             .build()
 
         val request = okhttp3.Request.Builder()
