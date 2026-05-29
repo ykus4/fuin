@@ -7,7 +7,7 @@ dependencies = [
     # packer
     "cryptography>=42.0.0",
     # server
-    "fastapi>=0.111.0",
+    "fastapi>=0.136.3",
     "uvicorn[standard]>=0.29.0",
     "python-multipart>=0.0.9",
     "sqlalchemy>=2.0.0",
