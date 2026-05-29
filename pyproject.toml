@@ -5,7 +5,7 @@ description = "Android DEX Packer — web-based APK packing for static analysis 
 requires-python = ">=3.12"
 dependencies = [
     # packer
-    "cryptography>=42.0.0",
+    "cryptography>=48.0.0",
     # server
     "fastapi>=0.111.0",
     "uvicorn[standard]>=0.29.0",
