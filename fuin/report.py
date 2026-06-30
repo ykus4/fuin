@@ -1,37 +1,23 @@
-"""
-Pack result diff report.
+"""Pack result diff report.
 
-Compares an original APK with its packed counterpart and generates
-a structured report showing size changes, encryption targets, and metadata.
+Compares an original APK with its packed counterpart and generates a
+structured report showing size changes, encryption targets, and metadata.
 """
 
 import zipfile
 from pathlib import Path
 
+from fuin._utils import fmt_size
+
 
 def generate_report(original_path: str, packed_path: str) -> dict:
-    """Generate a diff report comparing original and packed APKs.
-
-    Returns a dict with:
-      - size_before / size_after / size_delta
-      - file_counts
-      - encrypted_targets (DEX files encrypted)
-      - entry_changes (added/removed entries)
-      - signature_info
-    """
     orig_size = Path(original_path).stat().st_size
     packed_size = Path(packed_path).stat().st_size
 
-    orig_entries: dict[str, int] = {}
-    packed_entries: dict[str, int] = {}
-
     with zipfile.ZipFile(original_path, "r") as z:
-        for info in z.infolist():
-            orig_entries[info.filename] = info.file_size
-
+        orig_entries = {info.filename: info.file_size for info in z.infolist()}
     with zipfile.ZipFile(packed_path, "r") as z:
-        for info in z.infolist():
-            packed_entries[info.filename] = info.file_size
+        packed_entries = {info.filename: info.file_size for info in z.infolist()}
 
     orig_names = set(orig_entries.keys())
     packed_names = set(packed_entries.keys())
@@ -39,13 +25,9 @@ def generate_report(original_path: str, packed_path: str) -> dict:
     added = sorted(packed_names - orig_names)
     removed = sorted(orig_names - packed_names)
 
-    # Identify encrypted targets (DEX files that were removed)
     encrypted_dex = [f for f in removed if f.endswith(".dex")]
-
-    # Identify fuin-injected assets
     fuin_assets = [f for f in added if f.startswith("assets/")]
 
-    # Signature info
     orig_signatures = [f for f in orig_names if f.startswith("META-INF/")]
     packed_signatures = [f for f in packed_names if f.startswith("META-INF/")]
 
@@ -64,31 +46,19 @@ def generate_report(original_path: str, packed_path: str) -> dict:
             "added": len(added),
             "removed": len(removed),
         },
-        "encrypted_targets": {
-            "dex_files": encrypted_dex,
-            "count": len(encrypted_dex),
-        },
+        "encrypted_targets": {"dex_files": encrypted_dex, "count": len(encrypted_dex)},
         "injected_assets": fuin_assets,
-        "entry_changes": {
-            "added": added,
-            "removed": removed,
-        },
-        "signature": {
-            "original": sorted(orig_signatures),
-            "packed": sorted(packed_signatures),
-        },
+        "entry_changes": {"added": added, "removed": removed},
+        "signature": {"original": sorted(orig_signatures), "packed": sorted(packed_signatures)},
     }
 
 
 def format_report(report: dict) -> str:
-    """Format a report dict into a human-readable string."""
-    lines = []
-    lines.append("=== Fuin Pack Report ===")
-    lines.append("")
+    lines = ["=== Fuin Pack Report ===", ""]
 
     s = report["size"]
     lines.append(
-        f"APK Size: {_fmt_size(s['before'])} -> {_fmt_size(s['after'])} ({s['delta_percent']:+.1f}%)"
+        f"APK Size: {fmt_size(s['before'])} -> {fmt_size(s['after'])} ({s['delta_percent']:+.1f}%)"
     )
     lines.append("")
 
@@ -112,12 +82,3 @@ def format_report(report: dict) -> str:
         lines.append(f"  {f}")
 
     return "\n".join(lines)
-
-
-def _fmt_size(size: int) -> str:
-    if size < 1024:
-        return f"{size} B"
-    elif size < 1024 * 1024:
-        return f"{size / 1024:.1f} KB"
-    else:
-        return f"{size / (1024 * 1024):.1f} MB"

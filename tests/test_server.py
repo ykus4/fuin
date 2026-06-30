@@ -14,12 +14,17 @@ def client(tmp_path):
     os.environ["FUIN_PACKED_DIR"] = str(tmp_path / "packed")
     os.environ["FUIN_DATABASE_URL"] = f"sqlite:///{tmp_path}/test.db"
 
-    # Re-import config to pick up new env vars
+    # Re-import config + server modules so the engine picks up new env vars
     import importlib
 
     import fuin.config as cfg
 
     importlib.reload(cfg)
+
+    import fuin.server.deps as deps
+
+    deps.reset_engine()
+    importlib.reload(deps)
 
     import fuin.server.main as srv_main
 

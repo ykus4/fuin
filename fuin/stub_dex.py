@@ -1,5 +1,4 @@
-"""
-Build or locate the pre-compiled stub DEX.
+"""Build or locate the pre-compiled stub DEX.
 
 Strategy (in order):
 1. If FUIN_STUB_DEX env var points to an existing .dex file, use it.
@@ -10,11 +9,12 @@ Strategy (in order):
 
 import logging
 import os
-import shutil
 import subprocess
 import tempfile
 import zipfile
 from pathlib import Path
+
+from fuin.android_tools import require_build_tool
 
 log = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ def _build_stub_dex() -> bytes:
 
 def _aar_to_dex(aar_path: str) -> bytes:
     """Extract classes.jar from an AAR and convert to DEX using d8."""
-    d8 = _find_d8()
+    d8 = require_build_tool("d8")
     log.debug("using d8: %s", d8)
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -93,21 +93,3 @@ def _aar_to_dex(aar_path: str) -> bytes:
             raise FileNotFoundError(f"d8 did not produce classes.dex in {out_dir}")
 
         return Path(dex_file).read_bytes()
-
-
-def _find_d8() -> str:
-    """Locate the d8 binary from PATH or $ANDROID_HOME/build-tools/."""
-    found = shutil.which("d8")
-    if found:
-        return found
-
-    sdk_root = os.environ.get("ANDROID_HOME")
-    if sdk_root:
-        bt_root = Path(sdk_root) / "build-tools"
-        if bt_root.is_dir():
-            for v in sorted(bt_root.iterdir(), reverse=True):
-                candidate = v / "d8"
-                if candidate.is_file():
-                    return str(candidate)
-
-    raise FileNotFoundError("d8 not found. Set ANDROID_HOME or add build-tools to PATH.")

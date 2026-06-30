@@ -1,12 +1,21 @@
-"""
-SQLite-backed storage for packed APKs and job history.
-"""
+"""SQLite-backed storage for packed APKs, job history, and per-app webhooks."""
 
 import uuid
 from collections.abc import Generator
 
-from sqlalchemy import JSON, Column, DateTime, Integer, String, Text, create_engine, func
-from sqlalchemy.orm import DeclarativeBase, Session
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    create_engine,
+    func,
+)
+from sqlalchemy.orm import DeclarativeBase, Session, relationship
 
 
 class Base(DeclarativeBase):
@@ -20,13 +29,33 @@ class App(Base):
     package_name = Column(String, nullable=False)
     apk_signature = Column(String, nullable=False)
     packed_apk_path = Column(String, nullable=True)
-    # Rich analysis metadata (stored as JSON)
     analysis = Column(JSON, nullable=True)
-    # ProGuard mapping file path (if uploaded alongside the APK)
     mapping_path = Column(String, nullable=True)
-    # Webhook URLs to notify on completion (comma-separated)
-    webhook_urls = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+
+    webhooks = relationship(
+        "AppWebhook",
+        back_populates="app",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    jobs = relationship("JobRecord", back_populates="app", passive_deletes=True)
+
+    __table_args__ = (Index("ix_apps_created_at", "created_at"),)
+
+
+class AppWebhook(Base):
+    """Webhook URLs registered per packed app (notified on pack completion)."""
+
+    __tablename__ = "app_webhooks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    app_id = Column(String, ForeignKey("apps.app_id", ondelete="CASCADE"), nullable=False)
+    url = Column(String, nullable=False)
+
+    app = relationship("App", back_populates="webhooks")
+
+    __table_args__ = (Index("ix_app_webhooks_app_id", "app_id"),)
 
 
 class JobRecord(Base):
@@ -38,10 +67,14 @@ class JobRecord(Base):
     status = Column(String, nullable=False, default="pending")
     progress_step = Column(String, nullable=True)
     progress_pct = Column(Integer, nullable=True, default=0)
-    app_id = Column(String, nullable=True)  # set when done
+    app_id = Column(String, ForeignKey("apps.app_id", ondelete="SET NULL"), nullable=True)
     error = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     finished_at = Column(DateTime, nullable=True)
+
+    app = relationship("App", back_populates="jobs")
+
+    __table_args__ = (Index("ix_jobs_created_at", "created_at"),)
 
 
 def make_engine(database_url: str):
@@ -49,6 +82,10 @@ def make_engine(database_url: str):
 
 
 def init_db(engine) -> None:
+    """Create tables if they do not exist (for fresh installs / tests).
+
+    Production deployments should rely on Alembic migrations instead.
+    """
     Base.metadata.create_all(bind=engine)
 
 
