@@ -17,8 +17,10 @@ and instead operates on the raw string bytes in the DEX data section.
 import hashlib
 import struct
 
+from fuin._constants import STRING_KEY_ASSET as _STRING_KEY_ASSET
+
 DEX_MAGIC = b"dex\n"
-STRING_KEY_ASSET = "assets/string_key.bin"
+STRING_KEY_ASSET = _STRING_KEY_ASSET
 
 
 def encrypt_dex_strings(dex_data: bytes, key: bytes) -> tuple[bytes, bytes]:

@@ -18,29 +18,23 @@ import logging
 import struct
 import zipfile
 
+from fuin._constants import (
+    ANDROID_NS as _ANDROID_NS,
+)
+from fuin._constants import (
+    AXML_FILE_MAGIC,
+    CHUNK_STRING_POOL,
+    CHUNK_XML_START_ELEMENT,
+)
+from fuin._utils import read_u16 as _read_u16
+from fuin._utils import read_u32 as _read_u32
+
 log = logging.getLogger(__name__)
 
 STUB_CLASS = "com.fuin.stub.StubApplication"
 
-# AXML chunk types
-_CHUNK_STRING_POOL = 0x001C0001
-_CHUNK_XML_START_ELEMENT = 0x00100102
-
-# Common Android namespace URI
-_ANDROID_NS = "http://schemas.android.com/apk/res/android"
-
-
-# ---------------------------------------------------------------------------
-# String pool reader / writer
-# ---------------------------------------------------------------------------
-
-
-def _read_u32(data: bytes, offset: int) -> int:
-    return struct.unpack_from("<I", data, offset)[0]
-
-
-def _read_u16(data: bytes, offset: int) -> int:
-    return struct.unpack_from("<H", data, offset)[0]
+_CHUNK_STRING_POOL = CHUNK_STRING_POOL
+_CHUNK_XML_START_ELEMENT = CHUNK_XML_START_ELEMENT
 
 
 def _decode_pool_string(data: bytes, strings_start: int, offset: int, is_utf8: bool) -> str:
@@ -104,7 +98,7 @@ def _patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str
 
     # Verify AXML magic
     magic = _read_u32(data, 0)
-    if magic != 0x00080003:
+    if magic != AXML_FILE_MAGIC:
         log.warning("unexpected AXML magic 0x%08x — trying fallback patcher", magic)
         return _patch_axml_fallback(data, original_app_class)
 

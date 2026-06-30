@@ -1,5 +1,4 @@
-"""
-APK encryption target analysis.
+"""APK encryption target analysis.
 
 Scans an APK and reports all files that can be encrypted by fuin,
 categorized by type (DEX, native libs, assets).
@@ -9,20 +8,13 @@ import re
 import zipfile
 from pathlib import Path
 
-_DEX_PATTERN = re.compile(r"^classes\d*\.dex$")
+from fuin._constants import (
+    ENCRYPTED_LIBS_PREFIX,
+    ENCRYPTED_RES_PREFIX,
+    FUIN_INTERNAL_ASSETS,
+)
 
-# Assets that fuin injects — never encrypt these
-_FUIN_INTERNAL = {
-    "assets/encrypted.dex",
-    "assets/encrypted_extra.dex",
-    "assets/key.bin",
-    "assets/original_app_class.txt",
-    "assets/cert_fingerprint.bin",
-    "assets/security_policy.json",
-    "assets/native_lib_manifest.json",
-    "assets/res_map.json",
-    "assets/string_key.bin",
-}
+_DEX_PATTERN = re.compile(r"^classes\d*\.dex$")
 
 
 def analyze_targets(apk_path: str) -> dict:
@@ -43,16 +35,19 @@ def analyze_targets(apk_path: str) -> dict:
     with zipfile.ZipFile(apk_path, "r") as z:
         for info in z.infolist():
             name = info.filename
-
+            if name.endswith("/"):
+                continue
             if _DEX_PATTERN.match(name):
                 dex_files.append({"name": name, "size": info.file_size})
             elif name.startswith("lib/") and name.endswith(".so"):
                 native_files.append({"name": name, "size": info.file_size})
-            elif name.startswith("assets/") and name not in _FUIN_INTERNAL:
-                if not name.startswith("assets/encrypted_libs/"):
-                    if not name.startswith("assets/encrypted_res/"):
-                        if not name.endswith("/"):  # skip directories
-                            asset_files.append({"name": name, "size": info.file_size})
+            elif (
+                name.startswith("assets/")
+                and name not in FUIN_INTERNAL_ASSETS
+                and not name.startswith(ENCRYPTED_LIBS_PREFIX)
+                and not name.startswith(ENCRYPTED_RES_PREFIX)
+            ):
+                asset_files.append({"name": name, "size": info.file_size})
 
     dex_total = sum(f["size"] for f in dex_files)
     native_total = sum(f["size"] for f in native_files)
@@ -63,18 +58,9 @@ def analyze_targets(apk_path: str) -> dict:
     coverage = (total_size / apk_size * 100) if apk_size else 0
 
     return {
-        "dex": {
-            "files": dex_files,
-            "total_size": dex_total,
-        },
-        "native_libs": {
-            "files": native_files,
-            "total_size": native_total,
-        },
-        "assets": {
-            "files": asset_files,
-            "total_size": assets_total,
-        },
+        "dex": {"files": dex_files, "total_size": dex_total},
+        "native_libs": {"files": native_files, "total_size": native_total},
+        "assets": {"files": asset_files, "total_size": assets_total},
         "summary": {
             "total_files": total_files,
             "total_size": total_size,

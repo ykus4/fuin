@@ -11,6 +11,8 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY fuin/ fuin/
 COPY assets/ assets/
+COPY migrations/ migrations/
+COPY alembic.ini ./
 
 ENV FUIN_PACKED_DIR=/data/packed_apks
 ENV FUIN_DATABASE_URL=sqlite:////data/fuin.db

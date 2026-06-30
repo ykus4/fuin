@@ -1,11 +1,13 @@
-from pydantic import BaseModel
+"""Pydantic response/request schemas exposed by the FastAPI server."""
+
+from pydantic import BaseModel, Field
 
 
 class PackResult(BaseModel):
     app_id: str
     package_name: str
     apk_signature: str
-    analysis: dict
+    analysis: dict = Field(default_factory=dict)
     report: dict | None = None
 
 
