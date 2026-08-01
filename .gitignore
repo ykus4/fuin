@@ -12,15 +12,17 @@ build/
 # uv
 # uv.lock is committed so Docker builds can use --frozen
 
+# mkdocs build output
+site/
+
 # fuin runtime artifacts
 data/
 
 # Android / Gradle
-stub/.gradle/
-stub/build/
-stub/app/build/
-stub/local.properties
-stub/gradle.properties
+jvm/**/.gradle/
+jvm/**/build/
+jvm/**/local.properties
+jvm/**/gradle.properties
 *.keystore
 *.jks
 

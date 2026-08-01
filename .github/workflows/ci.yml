@@ -3,37 +3,23 @@ name: CI
 on:
   push:
     branches: [main, dev]
+  # Unrestricted: limiting this to `branches: [main]` meant a PR targeting any
+  # other branch — a stacked PR, or anything aimed at `dev` — got no CI at all.
   pull_request:
-    branches: [main]
+
+# A force-push should cancel the superseded run rather than race it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   lint:
     name: Lint & format
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "latest"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dev dependencies
-        run: uv sync --frozen --only-dev
-
-      - name: ruff check
-        run: uv run ruff check fuin/
-
-      - name: ruff format
-        run: uv run ruff format --check fuin/
-
-  test:
-    name: Tests
-    runs-on: ubuntu-latest
-    needs: lint
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
@@ -46,21 +32,166 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --all-extras
+
+      - name: ruff check
+        run: uv run ruff check src/ tests/
+
+      - name: ruff format
+        run: uv run ruff format --check src/ tests/
+
+      - name: mypy
+        run: uv run mypy
+
+  test:
+    name: Tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.14 is what the Docker image ships, so it must be tested.
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras --python ${{ matrix.python-version }}
 
       - name: Run tests
-        run: uv run pytest tests/ -q --tb=short
+        run: uv run pytest tests/ -q --tb=short --cov --cov-report=term-missing --cov-report=xml
         env:
           FUIN_API_KEY: ci-test-key
 
+      - name: Upload coverage
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
       - name: CLI smoke
         run: |
-          uv run python -c "from pathlib import Path; from tests.conftest import make_minimal_apk; Path('smoke.apk').write_bytes(make_minimal_apk())"
+          uv run python -c "from pathlib import Path; from tests.fixtures import make_minimal_apk; Path('smoke.apk').write_bytes(make_minimal_apk())"
           uv run fuin-pack analyze smoke.apk --json
+          uv run fuin-pack pack smoke.apk packed.apk --report
+
+  packer-only-install:
+    name: Packer-only install
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      # Guards two regressions the wheel has already had: assets/stub.dex not
+      # being packaged, and the server extra creeping into the base install.
+      - name: Build wheel and install it without extras
+        run: |
+          uv build --wheel --out-dir dist/
+          uv venv /tmp/packer-venv
+          VIRTUAL_ENV=/tmp/packer-venv uv pip install dist/*.whl
+
+      - name: Assert stub.dex ships in the wheel
+        run: unzip -l dist/*.whl | grep -q 'fuin/assets/stub.dex'
+
+      - name: Assert the server deps are absent
+        run: |
+          ! VIRTUAL_ENV=/tmp/packer-venv uv pip list | grep -Eiq '^(fastapi|sqlalchemy|alembic|uvicorn)'
+
+      - name: Pack an APK using only the installed wheel
+        run: |
+          # tests.fixtures is stdlib-only, so the packer venv can build the
+          # input itself — no dev environment involved.
+          /tmp/packer-venv/bin/python -c "
+          import sys; sys.path.insert(0, '.')
+          from pathlib import Path
+          from tests.fixtures import make_minimal_apk
+          Path('/tmp/in.apk').write_bytes(make_minimal_apk())"
+          /tmp/packer-venv/bin/fuin-pack pack /tmp/in.apk /tmp/out.apk --report
+
+  migrations:
+    name: Alembic migrations
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      # Tests build the schema with create_all, so migrations were never
+      # exercised and could drift from the models unnoticed.
+      - name: Upgrade, downgrade, upgrade again
+        env:
+          FUIN_DATABASE_URL: sqlite:///./ci-migrations.db
+        run: |
+          uv run alembic upgrade head
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+
+      - name: Assert models match the migrated schema
+        env:
+          FUIN_DATABASE_URL: sqlite:///./ci-migrations.db
+        run: |
+          uv run python -c "
+          from sqlalchemy import inspect
+          from fuin.server.database import Base, make_engine
+          from fuin.server.config import get_server_settings
+          engine = make_engine(get_server_settings().database_url)
+          actual = set(inspect(engine).get_table_names()) - {'alembic_version'}
+          expected = set(Base.metadata.tables)
+          assert actual == expected, f'schema drift: migrations={actual} models={expected}'
+          print('tables match:', sorted(actual))"
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      # --strict turns broken internal links into failures, so a renamed page
+      # cannot silently orphan its references.
+      - name: Build docs
+        run: uv run mkdocs build --strict
 
   gradle-plugin:
     name: Gradle plugin
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -72,11 +203,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
 
       - name: Build Gradle plugin
-        run: ./stub/gradlew -p gradle-plugin build --no-daemon
+        run: ./jvm/stub/gradlew -p jvm/gradle-plugin build --no-daemon
 
   stub:
     name: Android stub
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
 
@@ -90,11 +222,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
 
       - name: Build stub AAR
-        run: cd stub && ./gradlew :app:assembleRelease --no-daemon
+        run: cd jvm/stub && ./gradlew :app:assembleRelease --no-daemon
 
   docker:
     name: Docker build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -103,6 +236,25 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           push: false
-          load: false
+          load: true
+          tags: fuin:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # The image was previously built but never run, so a broken entrypoint or
+      # a missing migration would have shipped green.
+      - name: Smoke-test the image
+        run: |
+          docker run -d --name fuin-ci -p 8000:8000 -e FUIN_API_KEY=ci-test-key fuin:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/ >/dev/null 2>&1; then
+              echo "server is up"; break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "server did not start"; docker logs fuin-ci; exit 1
+            fi
+            sleep 2
+          done
+          curl -fsS -o /dev/null -w 'unauthenticated /apps -> %{http_code}\n' http://localhost:8000/apps || true
+          curl -fsS -H 'X-API-Key: ci-test-key' http://localhost:8000/apps
+          docker rm -f fuin-ci

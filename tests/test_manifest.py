@@ -1,7 +1,7 @@
 import zipfile
 
 from fuin.manifest import STUB_CLASS, patch_manifest
-from tests.conftest import make_minimal_apk
+from tests.fixtures import make_minimal_apk
 
 
 def _read_manifest(apk_path: str) -> bytes:

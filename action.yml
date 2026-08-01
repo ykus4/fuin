@@ -68,8 +68,9 @@ runs:
     - name: Install fuin
       shell: bash
       run: |
-        cd ${{ github.action_path }}
-        uv sync
+        # --no-dev: the action only needs the packer, not the test toolchain.
+        # No --extra server: packing does not use the web service.
+        uv sync --frozen --no-dev --project "${{ github.action_path }}"
 
     - name: Decode keystore
       if: inputs.keystore-base64 != ''
@@ -85,8 +86,9 @@ runs:
         FUIN_KEYSTORE_STORE_PASS: ${{ inputs.keystore-password }}
         FUIN_KEYSTORE_KEY_PASS: ${{ inputs.key-password }}
       run: |
-        cd ${{ github.action_path }}
-
+        # Deliberately no `cd` into the action path: input-apk/output-apk are
+        # relative to the caller's workspace, so we stay there and point uv at
+        # the action's project instead.
         ARGS="pack ${{ inputs.input-apk }} ${{ inputs.output-apk }}"
 
         if [ "${{ inputs.root-detection }}" = "true" ]; then
@@ -109,7 +111,7 @@ runs:
           ARGS="$ARGS --no-resource-encrypt"
         fi
 
-        uv run fuin-pack $ARGS --report
+        uv run --no-sync --project "${{ github.action_path }}" fuin-pack $ARGS --report
 
     - name: Clean up keystore
       if: always() && inputs.keystore-base64 != ''

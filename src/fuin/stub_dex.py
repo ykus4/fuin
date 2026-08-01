@@ -1,0 +1,103 @@
+"""Build or locate the pre-compiled stub DEX.
+
+Strategy (in order):
+1. If FUIN_STUB_DEX env var points to an existing .dex file, use it.
+2. Use the stub.dex shipped inside the package (fuin/assets/stub.dex).
+3. Build from source: run `./gradlew assembleRelease` in jvm/stub, then extract
+   classes.jar from the AAR and convert with d8. Only possible from a source
+   checkout — an installed wheel stops at step 2.
+"""
+
+import contextlib
+import logging
+import os
+import subprocess
+import tempfile
+import zipfile
+from pathlib import Path
+
+from fuin import config
+from fuin.android_tools import require_build_tool
+
+log = logging.getLogger(__name__)
+
+FUIN_DIR = Path(__file__).parent
+# Ships with the wheel, so `pip install fuin` can pack without an Android SDK.
+PREBUILT_DEX = FUIN_DIR / "assets" / "stub.dex"
+# Only present in a source checkout (src/fuin/ -> src/ -> repo root).
+STUB_DIR = FUIN_DIR.parent.parent / "jvm" / "stub"
+
+
+def get_stub_dex() -> bytes:
+    """Return the bytes of the compiled stub DEX, building if necessary."""
+    override = config.get_settings().stub_dex_path
+    if override and Path(override).is_file():
+        log.debug("using stub DEX from FUIN_STUB_DEX: %s", override)
+        return Path(override).read_bytes()
+
+    if PREBUILT_DEX.is_file():
+        log.debug("using pre-built stub DEX: %s", PREBUILT_DEX)
+        return PREBUILT_DEX.read_bytes()
+
+    return _build_stub_dex()
+
+
+def _build_stub_dex() -> bytes:
+    """Run Gradle to build the stub AAR, then d8 to produce stub.dex."""
+    gradlew = STUB_DIR / "gradlew"
+    if not gradlew.is_file():
+        raise FileNotFoundError(
+            f"Cannot find {gradlew}. The stub can only be built from a source "
+            f"checkout; set FUIN_STUB_DEX to a pre-built stub.dex instead."
+        )
+
+    log.info("building stub AAR with Gradle")
+    result = subprocess.run(
+        ["./gradlew", ":app:assembleRelease", "--quiet"],
+        cwd=STUB_DIR,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Gradle build failed:\n{result.stderr}")
+
+    aar_path = STUB_DIR / "app" / "build" / "outputs" / "aar" / "app-release.aar"
+    if not aar_path.is_file():
+        raise FileNotFoundError(f"Expected AAR at {aar_path} — check Gradle output")
+
+    dex_bytes = _aar_to_dex(str(aar_path))
+    # Best-effort cache: the package directory is read-only once installed.
+    with contextlib.suppress(OSError):
+        PREBUILT_DEX.parent.mkdir(parents=True, exist_ok=True)
+        PREBUILT_DEX.write_bytes(dex_bytes)
+        log.info("stub.dex cached at %s", PREBUILT_DEX)
+    return dex_bytes
+
+
+def _aar_to_dex(aar_path: str) -> bytes:
+    """Extract classes.jar from an AAR and convert to DEX using d8."""
+    d8 = require_build_tool("d8")
+    log.debug("using d8: %s", d8)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with zipfile.ZipFile(aar_path, "r") as z:
+            if "classes.jar" not in z.namelist():
+                raise FileNotFoundError("classes.jar not found inside AAR")
+            z.extract("classes.jar", tmpdir)
+            jar_path = os.path.join(tmpdir, "classes.jar")
+
+        out_dir = os.path.join(tmpdir, "dex_out")
+        os.makedirs(out_dir)
+        result = subprocess.run(
+            [d8, "--output", out_dir, "--min-api", "24", jar_path],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"d8 failed:\n{result.stderr}")
+
+        dex_file = os.path.join(out_dir, "classes.dex")
+        if not os.path.exists(dex_file):
+            raise FileNotFoundError(f"d8 did not produce classes.dex in {out_dir}")
+
+        return Path(dex_file).read_bytes()

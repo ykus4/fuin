@@ -5,7 +5,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from fuin import config as fuin_config
+from fuin.server.config import get_server_settings
 from fuin.server.database import Base
 
 config = context.config
@@ -13,7 +13,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", fuin_config.DATABASE_URL)
+config.set_main_option("sqlalchemy.url", get_server_settings().database_url)
 
 target_metadata = Base.metadata
 
