@@ -10,7 +10,7 @@ import zlib
 
 import pytest
 
-from fuin.string_encrypt import DEX_MAGIC, _derive_xor_key, encrypt_dex_strings
+from fuin.encryption.dex_strings import DEX_MAGIC, _derive_xor_key, encrypt_dex_strings
 
 HEADER_SIZE = 112
 STRING_IDS_SIZE_OFF = 56

@@ -13,11 +13,11 @@ import os
 import uuid
 from collections.abc import Callable
 
-from fuin._constants import PRIMARY_DEX
-from fuin.analyze import analyze_targets as _analyze_targets
-from fuin.apk_info import get_apk_info
+from fuin.axml import get_apk_info
+from fuin.contract import PRIMARY_DEX
 from fuin.packer import PackOptions, PackResult, pack_apk
-from fuin.report import generate_report
+from fuin.reporting import analyze_targets as _analyze_targets
+from fuin.reporting import generate_report
 from fuin.server.config import get_server_settings
 
 log = logging.getLogger(__name__)

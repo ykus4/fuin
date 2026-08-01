@@ -36,6 +36,21 @@ Warnings are errors in the test suite (`filterwarnings = ["error"]`), so a new
 
 fuin uses a **src layout**: the package lives at `src/fuin/`, so tests run against the
 installed package rather than the source tree, and packaging mistakes surface in CI.
+The `fuin` directory itself is the import name — modules cannot move up to `src/`
+directly, or every subpackage would become a top-level import.
+
+The core packer is grouped by concern rather than kept flat:
+
+| Package | Owns |
+|---|---|
+| `axml/` | Android Binary XML, byte level only — no ZIP, no filesystem |
+| `apk/` | ZIP I/O, signing, alignment, the Android SDK toolchain |
+| `encryption/` | AES, DEX strings, native libraries, assets |
+| `reporting/` | Read-only views: analysis and the pack diff |
+| `contract.py` | The asset paths shared with the Kotlin stub |
+
+Dependencies run downward only: `packer.py` → `apk/` → `axml/`. If you find yourself
+importing `apk` from `axml`, the code probably belongs on the other side of that line.
 
 `src/fuin/assets/stub.dex` is committed and ships inside the wheel. That is why
 `pip install fuin` can pack without an Android SDK — see

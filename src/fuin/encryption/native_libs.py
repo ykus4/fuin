@@ -7,7 +7,7 @@ prepares them for injection into the APK as encrypted assets.
 import json
 import zipfile
 
-from fuin.crypto import encrypt_blob
+from fuin.encryption.aes import encrypt_blob
 
 
 def encrypt_native_libs(

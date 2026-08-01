@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 from typing import TypedDict
 
-from fuin._constants import (
+from fuin.contract import (
     DEX_NAME_RE,
     ENCRYPTED_LIBS_PREFIX,
     ENCRYPTED_RES_PREFIX,

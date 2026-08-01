@@ -8,9 +8,8 @@ import argparse
 import json
 import logging
 
-from fuin._utils import fmt_size
 from fuin.packer import PackOptions, pack_apk
-from fuin.report import format_report, generate_report
+from fuin.reporting import fmt_size, format_report, generate_report
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +40,7 @@ def _pack(args: argparse.Namespace) -> None:
 
 
 def _analyze(args: argparse.Namespace) -> None:
-    from fuin.analyze import analyze_targets
+    from fuin.reporting import analyze_targets
 
     result = analyze_targets(args.input)
     if args.json:

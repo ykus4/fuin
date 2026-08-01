@@ -1,4 +1,9 @@
-"""Centralized constants for asset paths, AXML chunk types, and signing block IDs."""
+"""The interface between the Python packer and the Kotlin stub.
+
+These names are the real cross-language contract: the packer writes them into
+the APK, and `jvm/stub` reads them back at runtime. Changing anything here
+means changing the stub too.
+"""
 
 import re
 
@@ -42,33 +47,5 @@ FUIN_INTERNAL_ASSETS: frozenset[str] = frozenset(
     }
 )
 
-# ---------------------------------------------------------------------------
-# AXML chunk types (from Android frameworks/base ResourceTypes.h)
-# ---------------------------------------------------------------------------
-AXML_FILE_MAGIC = 0x00080003
-CHUNK_STRING_POOL = 0x001C0001
-CHUNK_RESOURCE_MAP = 0x00180002
-CHUNK_XML_START_NS = 0x00100100
-CHUNK_XML_END_NS = 0x00100101
-CHUNK_XML_START_ELEMENT = 0x00100102
-CHUNK_XML_END_ELEMENT = 0x00100103
-CHUNK_XML_CDATA = 0x00100104
-
-ANDROID_NS = "http://schemas.android.com/apk/res/android"
-
-# Android resource IDs for common attributes
-RES_VERSION_CODE = 0x0101021B
-RES_VERSION_NAME = 0x0101021C
-RES_MIN_SDK = 0x0101020C
-RES_TARGET_SDK = 0x01010270
-RES_NAME = 0x01010003
-
-# ---------------------------------------------------------------------------
-# Misc
-# ---------------------------------------------------------------------------
-ZIP_LOCAL_HEADER_MAGIC = b"PK\x03\x04"
-ZIP_EOCD_MAGIC = b"PK\x05\x06"
-ZIP_LFH_SIG = 0x04034B50
-
-APK_V2_BLOCK_ID = 0x7109871A
-APK_SIG_BLOCK_MAGIC = b"APK Sig Block 42"
+# The class the manifest's android:name is rewritten to point at.
+STUB_CLASS = "com.fuin.stub.StubApplication"

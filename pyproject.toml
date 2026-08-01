@@ -101,9 +101,9 @@ ignore = [
     "S106",
     "S324",    # sha1/adler32 appear because the DEX format mandates them
 ]
-"src/fuin/string_encrypt.py" = ["S324"]  # DEX header mandates SHA-1
-"src/fuin/signing.py" = ["S324"]
+"src/fuin/encryption/dex_strings.py" = ["S324"]  # the DEX header mandates SHA-1
+"src/fuin/apk/signing.py" = ["S324"]
 # FastAPI's dependency-injection idiom is a call in the argument default.
 "src/fuin/server/routers/*" = ["B008"]
-"src/fuin/keystore.py" = ["S105"]         # the debug keystore password is public by design
+"src/fuin/apk/keystore.py" = ["S105"]     # the debug keystore password is public by design
 "src/fuin/server/main.py" = ["S104"]      # binding 0.0.0.0 is the point of a container

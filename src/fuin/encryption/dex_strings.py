@@ -18,7 +18,7 @@ import hashlib
 import struct
 import zlib
 
-from fuin._constants import STRING_KEY_ASSET
+from fuin.contract import STRING_KEY_ASSET
 
 DEX_MAGIC = b"dex\n"
 

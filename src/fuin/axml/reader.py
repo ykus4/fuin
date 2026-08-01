@@ -1,9 +1,11 @@
 """Android Binary XML (AXML) reading primitives.
 
-Shared by the read-only inspector (:mod:`fuin.apk_info`) and the string-pool
-rewriter (:mod:`fuin.manifest`), which each used to carry an independent
+Shared by the read-only inspector (:mod:`fuin.axml.info`) and the string-pool
+rewriter (:mod:`fuin.axml.patcher`), which each used to carry an independent
 implementation of the same binary format — same offsets, same extended-length
 bit tricks, differing only in error handling.
+
+Purely byte-level: nothing here touches a ZIP or the filesystem.
 
 Layout (chunk-based):
   0x00080003  — XML document header
@@ -17,24 +19,43 @@ import struct
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 
-from fuin._constants import (
+from fuin.axml.constants import (
     AXML_FILE_MAGIC,
     CHUNK_RESOURCE_MAP,
     CHUNK_STRING_POOL,
     CHUNK_XML_START_ELEMENT,
 )
-from fuin._utils import read_u16, read_u32
-
-MANIFEST_NAME = "AndroidManifest.xml"
-
-# ResValue type byte for a string reference into the pool.
-TYPE_STRING = 0x03
 
 # Flag in the string-pool header marking UTF-8 (rather than UTF-16LE) strings.
 _FLAG_UTF8 = 0x100
 
 # ResStringPool_header is 7 u32s; the offsets array follows it.
 _POOL_HEADER_SIZE = 28
+
+
+def read_u32(data: bytes, offset: int) -> int:
+    return struct.unpack_from("<I", data, offset)[0]
+
+
+def read_u16(data: bytes, offset: int) -> int:
+    return struct.unpack_from("<H", data, offset)[0]
+
+
+def fallback_package_name(axml: bytes) -> str:
+    """Best-effort package name straight out of raw AXML bytes.
+
+    Used when the structural parse yields nothing.
+    """
+    idx = axml.find(b"package")
+    if idx == -1:
+        return "unknown"
+    chunk = axml[idx : idx + 256]
+    for encoding in ("utf-8", "utf-16-le"):
+        text = chunk.decode(encoding, errors="ignore")
+        for p in text.split():
+            if "." in p and p.replace(".", "").replace("_", "").isalnum():
+                return p
+    return "unknown"
 
 
 def decode_pool_string(data: bytes, strings_abs: int, offset: int, is_utf8: bool) -> str:

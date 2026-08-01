@@ -9,12 +9,12 @@ import json
 import re
 import zipfile
 
-from fuin._constants import (
+from fuin.contract import (
     ENCRYPTED_LIBS_PREFIX,
     ENCRYPTED_RES_PREFIX,
     FUIN_INTERNAL_ASSETS,
 )
-from fuin.crypto import encrypt_blob
+from fuin.encryption.aes import encrypt_blob
 
 
 def encrypt_resources(

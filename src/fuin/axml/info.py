@@ -8,16 +8,18 @@ import logging
 import os
 import zipfile
 
-from fuin import axml as axml_mod
-from fuin._constants import (
-    DEX_NAME_RE,
+from fuin.axml import reader as axml_mod
+from fuin.axml.constants import (
+    MANIFEST_NAME,
     RES_MIN_SDK,
     RES_NAME,
     RES_TARGET_SDK,
     RES_VERSION_CODE,
     RES_VERSION_NAME,
+    TYPE_STRING,
 )
-from fuin._utils import fallback_package_name
+from fuin.axml.reader import fallback_package_name
+from fuin.contract import DEX_NAME_RE
 
 log = logging.getLogger(__name__)
 
@@ -51,9 +53,7 @@ def _parse_manifest(axml: bytes) -> dict:
         by_res_id: dict[int, tuple[int, str]] = {}
         by_name: dict[int, tuple[int, str]] = {}
         for attr in elem.attributes:
-            raw_str = (
-                pool.get(attr.raw_value_index) if attr.value_type == axml_mod.TYPE_STRING else ""
-            )
+            raw_str = pool.get(attr.raw_value_index) if attr.value_type == TYPE_STRING else ""
             value = (attr.value_data, raw_str)
             by_res_id[pool.res_id(attr.name_index)] = value
             by_name[attr.name_index] = value
@@ -107,7 +107,7 @@ def get_apk_info(apk_path: str) -> dict:
     try:
         with zipfile.ZipFile(apk_path, "r") as z:
             names = z.namelist()
-            axml = z.read("AndroidManifest.xml")
+            axml = z.read(MANIFEST_NAME)
     except Exception as e:
         log.warning("failed to read APK %s: %s", apk_path, e)
         return {"package_name": "unknown", "error": str(e)}

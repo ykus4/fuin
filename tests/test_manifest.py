@@ -1,6 +1,7 @@
 import zipfile
 
-from fuin.manifest import STUB_CLASS, patch_manifest
+from fuin.apk import patch_manifest
+from fuin.contract import STUB_CLASS
 from tests.fixtures import make_minimal_apk
 
 

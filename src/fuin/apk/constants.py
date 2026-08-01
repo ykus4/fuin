@@ -1,0 +1,8 @@
+"""ZIP and APK Signing Block magic values."""
+
+ZIP_LOCAL_HEADER_MAGIC = b"PK\x03\x04"
+ZIP_EOCD_MAGIC = b"PK\x05\x06"
+ZIP_LFH_SIG = 0x04034B50
+
+APK_V2_BLOCK_ID = 0x7109871A
+APK_SIG_BLOCK_MAGIC = b"APK Sig Block 42"

@@ -16,9 +16,14 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
-from fuin._utils import parse_env_bool
-
 load_dotenv()
+
+
+def parse_env_bool(value: str | None, default: bool = False) -> bool:
+    """Parse an env-var string as a bool. Accepts 1/true/yes, case-insensitive."""
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes")
 
 
 def env_int(name: str, default: int) -> int:

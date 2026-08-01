@@ -1,7 +1,7 @@
 import pytest
 from cryptography.exceptions import InvalidTag
 
-from fuin.crypto import decrypt_dex, encrypt_dex, generate_key
+from fuin.encryption.aes import decrypt_dex, encrypt_dex, generate_key
 
 
 def test_generate_key_length():
