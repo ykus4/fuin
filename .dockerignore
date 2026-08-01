@@ -12,11 +12,9 @@ build/
 packed_apks/
 fuin.db
 
-# Stub build artifacts (rebuilt inside Docker)
-stub/.gradle/
-stub/build/
-stub/app/build/
-fuin/stub.dex
+# JVM sources and build artifacts — not needed by the server image, which
+# uses the stub.dex shipped inside the Python package.
+jvm/
 
 *.keystore
 *.jks

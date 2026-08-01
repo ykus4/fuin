@@ -16,11 +16,10 @@ build/
 data/
 
 # Android / Gradle
-stub/.gradle/
-stub/build/
-stub/app/build/
-stub/local.properties
-stub/gradle.properties
+jvm/**/.gradle/
+jvm/**/build/
+jvm/**/local.properties
+jvm/**/gradle.properties
 *.keystore
 *.jks
 

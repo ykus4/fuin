@@ -159,10 +159,10 @@ curl -L "https://dl.google.com/android/repository/build-tools_r34-macosx.zip" \
 unzip -q /tmp/bt.zip -d /tmp/bt && mv /tmp/bt/android-14 ~/android-sdk/build-tools/34.0.0
 
 # Build stub DEX (one-time)
-cd stub && ./gradlew :app:assembleRelease && cd ..
+cd jvm/stub && ./gradlew :app:assembleRelease && cd ../..
 
-# Start
-uv sync
+# Start (--all-extras pulls in the server dependencies)
+uv sync --all-extras
 cp .env.example .env          # set FUIN_API_KEY
 uv run fuin-server
 ```
@@ -246,7 +246,7 @@ Add fuin protection to your Android build pipeline with a single DSL block.
 ```kotlin
 // settings.gradle.kts
 pluginManagement {
-    includeBuild("path/to/fuin/gradle-plugin")
+    includeBuild("path/to/fuin/jvm/gradle-plugin")
 }
 
 // app/build.gradle.kts
@@ -361,7 +361,7 @@ Copy `.env.example` → `.env` and set at minimum `FUIN_API_KEY`.
 
 ```
 fuin/
-├── fuin/                      # Python package
+├── src/fuin/                  # Python package (src layout)
 │   ├── config.py              # Config (env vars / .env)
 │   ├── cli.py                 # fuin-pack CLI
 │   ├── crypto.py              # AES-256-GCM
@@ -373,10 +373,12 @@ fuin/
 │   ├── string_encrypt.py      # DEX string XOR obfuscation
 │   ├── report.py              # Pack diff report generation
 │   ├── stub_dex.py            # Stub DEX locator
-│   └── server/                # FastAPI server
+│   ├── assets/stub.dex        # pre-built stub DEX (committed, ships in wheel)
+│   └── server/                # FastAPI server — `pip install fuin[server]`
 │       ├── main.py            # HTTP endpoints (fuin-server)
 │       ├── pipeline.py        # Pack pipeline
 │       ├── jobs.py            # Async job store (SSE)
+│       ├── background.py      # Detached-task helper
 │       ├── models.py          # Pydantic response models
 │       └── static/index.html  # Web UI
 ├── tests/                     # pytest suite
@@ -386,25 +388,24 @@ fuin/
 │   ├── test_apk.py            # inject, zipalign
 │   ├── test_pipeline.py       # End-to-end pack pipeline
 │   └── test_server.py         # FastAPI endpoints
-├── stub/                      # Android stub (Kotlin, minSdk 24)
-│   └── app/src/main/java/com/fuin/stub/
-│       ├── StubApplication.kt      # Entry point: orchestrates all decryption
-│       ├── Crypto.kt                # AES-256-GCM decryption
-│       ├── ApplicationSwap.kt      # Reflection-based app hot-swap
-│       ├── IntegrityCheck.kt       # Anti-tamper: cert verification
-│       ├── SecurityCheck.kt        # Root/emulator detection
-│       ├── NativeLibDecryptor.kt   # .so file decryption + lib path patching
-│       ├── DecryptingAssetManager.kt  # Encrypted asset decryption
-│       └── StringDecryptor.kt      # DEX string de-obfuscation
-├── gradle-plugin/             # Gradle plugin for build integration
-│   ├── build.gradle.kts
-│   └── src/main/kotlin/com/fuin/gradle/
-│       ├── FuinPlugin.kt      # Plugin entry point
-│       ├── FuinExtension.kt   # DSL configuration
-│       └── FuinPackTask.kt    # Pack task implementation
+├── jvm/                       # Everything Gradle-built
+│   ├── stub/                  # Android stub (Kotlin, minSdk 24)
+│   │   └── app/src/main/java/com/fuin/stub/
+│   │       ├── StubApplication.kt          # Entry point: orchestrates decryption
+│   │       ├── Crypto.kt                   # AES-256-GCM decryption
+│   │       ├── ApplicationSwap.kt          # Reflection-based app hot-swap
+│   │       ├── IntegrityCheck.kt           # Anti-tamper: cert verification
+│   │       ├── SecurityCheck.kt            # Root/emulator detection
+│   │       ├── NativeLibDecryptor.kt       # .so decryption + lib path patching
+│   │       ├── DecryptingAssetManager.kt   # Encrypted asset decryption
+│   │       └── StringDecryptor.kt          # DEX string de-obfuscation
+│   └── gradle-plugin/         # Gradle plugin for build integration
+│       ├── build.gradle.kts
+│       └── src/main/kotlin/com/fuin/gradle/
+│           ├── FuinPlugin.kt      # Plugin entry point
+│           ├── FuinExtension.kt   # DSL configuration
+│           └── FuinPackTask.kt    # Pack task implementation
 ├── action.yml                 # GitHub Actions composite action
-├── assets/
-│   └── stub.dex               # pre-built stub DEX (committed)
 ├── .env.example
 ├── docker-compose.yml
 └── Dockerfile

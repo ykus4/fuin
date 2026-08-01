@@ -6,7 +6,7 @@ updates:
       interval: "weekly"
 
   - package-ecosystem: "gradle"
-    directory: "/gradle-plugin"
+    directory: "/jvm/gradle-plugin"
     schedule:
       interval: "weekly"
 

@@ -25,10 +25,10 @@ jobs:
         run: uv sync --frozen --only-dev
 
       - name: ruff check
-        run: uv run ruff check fuin/
+        run: uv run ruff check src/ tests/
 
       - name: ruff format
-        run: uv run ruff format --check fuin/
+        run: uv run ruff format --check src/ tests/
 
   test:
     name: Tests
@@ -46,7 +46,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --all-extras
 
       - name: Run tests
         run: uv run pytest tests/ -q --tb=short
@@ -72,7 +72,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
 
       - name: Build Gradle plugin
-        run: ./stub/gradlew -p gradle-plugin build --no-daemon
+        run: ./jvm/stub/gradlew -p jvm/gradle-plugin build --no-daemon
 
   stub:
     name: Android stub
@@ -90,7 +90,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
 
       - name: Build stub AAR
-        run: cd stub && ./gradlew :app:assembleRelease --no-daemon
+        run: cd jvm/stub && ./gradlew :app:assembleRelease --no-daemon
 
   docker:
     name: Docker build

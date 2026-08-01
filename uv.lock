@@ -232,12 +232,16 @@ name = "fuin"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "alembic" },
     { name = "cryptography" },
+    { name = "python-dotenv" },
+]
+
+[package.optional-dependencies]
+server = [
+    { name = "alembic" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "pydantic" },
-    { name = "python-dotenv" },
     { name = "python-multipart" },
     { name = "sqlalchemy" },
     { name = "uvicorn", extra = ["standard"] },
@@ -254,16 +258,17 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "alembic", specifier = ">=1.18.5" },
+    { name = "alembic", marker = "extra == 'server'", specifier = ">=1.18.5" },
     { name = "cryptography", specifier = ">=49.0.0" },
-    { name = "fastapi", specifier = ">=0.139.0" },
-    { name = "httpx", specifier = ">=0.27.0" },
-    { name = "pydantic", specifier = ">=2.13.4" },
+    { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.139.0" },
+    { name = "httpx", marker = "extra == 'server'", specifier = ">=0.27.0" },
+    { name = "pydantic", marker = "extra == 'server'", specifier = ">=2.13.4" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
-    { name = "python-multipart", specifier = ">=0.0.9" },
-    { name = "sqlalchemy", specifier = ">=2.0.50" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.49.0" },
+    { name = "python-multipart", marker = "extra == 'server'", specifier = ">=0.0.9" },
+    { name = "sqlalchemy", marker = "extra == 'server'", specifier = ">=2.0.50" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'server'", specifier = ">=0.49.0" },
 ]
+provides-extras = ["server"]
 
 [package.metadata.requires-dev]
 dev = [

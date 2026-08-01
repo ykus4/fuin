@@ -2,11 +2,13 @@
 
 Strategy (in order):
 1. If FUIN_STUB_DEX env var points to an existing .dex file, use it.
-2. If a pre-built stub.dex exists next to this file (fuin/stub.dex), use it.
-3. Build from source: run `./gradlew assembleRelease` in stub/, then extract
-   classes.jar from the AAR and convert with d8.
+2. Use the stub.dex shipped inside the package (fuin/assets/stub.dex).
+3. Build from source: run `./gradlew assembleRelease` in jvm/stub, then extract
+   classes.jar from the AAR and convert with d8. Only possible from a source
+   checkout — an installed wheel stops at step 2.
 """
 
+import contextlib
 import logging
 import os
 import subprocess
@@ -20,8 +22,10 @@ from fuin.android_tools import require_build_tool
 log = logging.getLogger(__name__)
 
 FUIN_DIR = Path(__file__).parent
-STUB_DIR = FUIN_DIR.parent / "stub"
-PREBUILT_DEX = FUIN_DIR.parent / "assets" / "stub.dex"
+# Ships with the wheel, so `pip install fuin` can pack without an Android SDK.
+PREBUILT_DEX = FUIN_DIR / "assets" / "stub.dex"
+# Only present in a source checkout (src/fuin/ -> src/ -> repo root).
+STUB_DIR = FUIN_DIR.parent.parent / "jvm" / "stub"
 
 
 def get_stub_dex() -> bytes:
@@ -43,8 +47,8 @@ def _build_stub_dex() -> bytes:
     gradlew = STUB_DIR / "gradlew"
     if not gradlew.is_file():
         raise FileNotFoundError(
-            f"Cannot find {gradlew}. Either pre-build the stub and place stub.dex "
-            f"at fuin/stub.dex, or set FUIN_STUB_DEX to its path."
+            f"Cannot find {gradlew}. The stub can only be built from a source "
+            f"checkout; set FUIN_STUB_DEX to a pre-built stub.dex instead."
         )
 
     log.info("building stub AAR with Gradle")
@@ -62,8 +66,11 @@ def _build_stub_dex() -> bytes:
         raise FileNotFoundError(f"Expected AAR at {aar_path} — check Gradle output")
 
     dex_bytes = _aar_to_dex(str(aar_path))
-    PREBUILT_DEX.write_bytes(dex_bytes)
-    log.info("stub.dex cached at %s", PREBUILT_DEX)
+    # Best-effort cache: the package directory is read-only once installed.
+    with contextlib.suppress(OSError):
+        PREBUILT_DEX.parent.mkdir(parents=True, exist_ok=True)
+        PREBUILT_DEX.write_bytes(dex_bytes)
+        log.info("stub.dex cached at %s", PREBUILT_DEX)
     return dex_bytes
 
 
