@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 from fuin import config
 from fuin._constants import ZIP_LOCAL_HEADER_MAGIC
 from fuin.analyze import analyze_targets
+from fuin.server.background import spawn
 from fuin.server.database import App, JobRecord
 from fuin.server.deps import get_db, get_engine, verify_api_key
 from fuin.server.jobs import create_job, get_job
@@ -99,19 +100,21 @@ async def pack_apk(
     exclude_files: str = Form(default=""),
     encrypt_native: bool = Form(default=True),
     encrypt_assets: bool = Form(default=True),
-    encrypt_strings: bool = Form(default=False),
-    root_detection: bool = Form(default=False),
-    emulator_detection: bool = Form(default=False),
+    # Omitting these defers to the corresponding FUIN_* setting; see PackOptions.
+    encrypt_strings: bool | None = Form(default=None),
+    root_detection: bool | None = Form(default=None),
+    emulator_detection: bool | None = Form(default=None),
 ):
     apk_bytes = await file.read()
     _ensure_valid_apk(apk_bytes, filename=file.filename)
 
-    if len(apk_bytes) > config.MAX_UPLOAD_BYTES:
+    max_upload_bytes = config.get_settings().max_upload_bytes
+    if len(apk_bytes) > max_upload_bytes:
         raise HTTPException(
             status_code=413,
             detail=(
                 f"APK too large: {len(apk_bytes) // (1024 * 1024)} MB "
-                f"(limit: {config.MAX_UPLOAD_BYTES // (1024 * 1024)} MB)"
+                f"(limit: {max_upload_bytes // (1024 * 1024)} MB)"
             ),
         )
 
@@ -121,7 +124,7 @@ async def pack_apk(
         s.add(JobRecord(job_id=job.job_id, status="pending"))
         s.commit()
 
-    asyncio.create_task(
+    spawn(
         run_pack_job(
             engine,
             job,
@@ -212,11 +215,17 @@ async def upload_mapping(
     if not entry:
         raise HTTPException(status_code=404, detail="App not found")
 
+    settings = config.get_settings()
     content = await file.read()
-    if len(content) > 50 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="Mapping file too large (max 50 MB)")
+    if len(content) > settings.max_mapping_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Mapping file too large (max {settings.max_mapping_bytes // (1024 * 1024)} MB)"
+            ),
+        )
 
-    mapping_dir = Path(config.PACKED_APK_DIR) / "mappings"
+    mapping_dir = Path(settings.packed_apk_dir) / "mappings"
     mapping_dir.mkdir(parents=True, exist_ok=True)
     mapping_path = mapping_dir / f"{app_id}_mapping.txt"
     mapping_path.write_bytes(content)

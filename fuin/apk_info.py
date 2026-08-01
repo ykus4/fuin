@@ -25,10 +25,6 @@ from fuin._utils import fallback_package_name, read_u16, read_u32
 
 log = logging.getLogger(__name__)
 
-# Resource ID used for the "package" attribute on <manifest>. Some Android
-# versions use the same constant as RES_VERSION_CODE; we keep them aliased.
-_RES_PACKAGE = RES_VERSION_CODE
-
 
 def _decode_string(data: bytes, strings_abs: int, offset: int, is_utf8: bool) -> str:
     try:
@@ -164,28 +160,29 @@ def _parse_manifest(axml: bytes) -> dict:
                 v = attrs.get(rid)
                 return v[0] if v else None
 
+            def _named_val(name: str) -> str:
+                """Look up an attribute by literal name.
+
+                Attributes outside the ``android`` namespace — ``package`` on
+                ``<manifest>``, most notably — carry no resource ID, so they
+                can only be found via the string pool.
+                """
+                for i, s in enumerate(pool):
+                    if s == name:
+                        v = attrs.get(i + 0x80000000)
+                        if v and v[1]:
+                            return v[1]
+                return ""
+
             if elem_name == "manifest":
-                result["package_name"] = _str_val(_RES_PACKAGE) or _str_val(0)
-                if not result["package_name"]:
-                    for i, s in enumerate(pool):
-                        if s == "package":
-                            v = attrs.get(i + 0x80000000)
-                            if v and v[1]:
-                                result["package_name"] = v[1]
-                                break
+                result["package_name"] = _named_val("package") or _str_val(0)
+                result["version_code"] = _int_val(RES_VERSION_CODE)
                 result["version_name"] = _str_val(RES_VERSION_NAME)
             elif elem_name == "uses-sdk":
                 result["min_sdk"] = _int_val(RES_MIN_SDK)
                 result["target_sdk"] = _int_val(RES_TARGET_SDK)
             elif elem_name == "uses-permission":
-                perm = _str_val(RES_NAME)
-                if not perm:
-                    for i, s in enumerate(pool):
-                        if s == "name":
-                            v = attrs.get(i + 0x80000000)
-                            if v and v[1]:
-                                perm = v[1]
-                                break
+                perm = _str_val(RES_NAME) or _named_val("name")
                 if perm:
                     result["permissions"].append(perm)
             elif elem_name == "activity":

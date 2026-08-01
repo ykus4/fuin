@@ -82,9 +82,9 @@ async def run_pack_job(
     webhook_url: str,
     encrypt_native: bool,
     encrypt_assets: bool,
-    encrypt_strings: bool,
-    root_detection: bool,
-    emulator_detection: bool,
+    encrypt_strings: bool | None,
+    root_detection: bool | None,
+    emulator_detection: bool | None,
     exclude_files: tuple[str, ...],
 ) -> None:
     """Run the pack pipeline asynchronously and persist results."""
@@ -128,7 +128,7 @@ async def run_pack_job(
             ),
         )
 
-        webhook_urls = webhook_service.parse_urls(webhook_url, config.WEBHOOK_URL)
+        webhook_urls = webhook_service.parse_urls(webhook_url, config.get_settings().webhook_url)
         entry = await loop.run_in_executor(
             None,
             lambda: _save_app(

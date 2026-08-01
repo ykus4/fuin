@@ -8,7 +8,6 @@ import argparse
 import json
 import logging
 
-from fuin import config
 from fuin._utils import fmt_size
 from fuin.packer import PackOptions, pack_apk
 from fuin.report import format_report, generate_report
@@ -96,28 +95,36 @@ def build_parser() -> argparse.ArgumentParser:
     pack_p.add_argument("--key-pass", help="Key password (overrides FUIN_KEYSTORE_KEY_PASS)")
     pack_p.add_argument("--report", action="store_true", help="Print pack diff report")
     pack_p.add_argument("--report-json", action="store_true", help="Print pack diff report as JSON")
-    pack_p.add_argument("--root-detection", action="store_true", help="Enable root detection")
+    # The flags below default to ``None`` rather than ``False`` so that leaving
+    # one off defers to the corresponding FUIN_* environment variable, while
+    # passing it still wins. See PackOptions.
     pack_p.add_argument(
-        "--emulator-detection", action="store_true", help="Enable emulator detection"
+        "--root-detection", action="store_true", default=None, help="Enable root detection"
+    )
+    pack_p.add_argument(
+        "--emulator-detection", action="store_true", default=None, help="Enable emulator detection"
     )
     pack_p.add_argument("--no-native-encrypt", action="store_true", help="Disable .so encryption")
     pack_p.add_argument(
         "--no-resource-encrypt", action="store_true", help="Disable asset encryption"
     )
     pack_p.add_argument(
-        "--encrypt-strings", action="store_true", help="Enable DEX string obfuscation"
+        "--encrypt-strings",
+        action="store_true",
+        default=None,
+        help="Enable DEX string obfuscation",
     )
     pack_p.add_argument(
         "--no-strict-manifest-patch",
         dest="strict_manifest_patch",
         action="store_false",
-        default=config.STRICT_MANIFEST_PATCH,
+        default=None,
         help="Allow best-effort packing when StubApplication cannot be inserted",
     )
     pack_p.add_argument(
         "--verify-signature",
         action="store_true",
-        default=config.VERIFY_SIGNATURE,
+        default=None,
         help="Run apksigner verify after signing",
     )
 

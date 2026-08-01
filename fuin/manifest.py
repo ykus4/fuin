@@ -193,7 +193,6 @@ def _patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str
     # Style offsets (copy unchanged)
     styles_blob = b""
     if sp_style_count > 0:
-        style_offsets_start = offsets_start + sp_string_count * 4
         orig_styles_start = _read_u32(data, sp_offset + 24)
         if orig_styles_start:
             # Style data ends at sp_chunk_size from sp_offset
@@ -210,20 +209,7 @@ def _patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str
         new_strings_blob += b"\x00" * padding
         new_sp_size += padding
 
-    new_sp_strings_start_with_styles = new_sp_strings_start  # strings start offset within chunk
-
-    new_sp_header = struct.pack(
-        "<IIIIIIII",
-        _CHUNK_STRING_POOL,
-        new_sp_size,
-        sp_string_count,
-        sp_style_count,
-        sp_flags,
-        new_sp_strings_start_with_styles,
-        (new_sp_strings_start_with_styles + len(new_strings_blob)) if sp_style_count else 0,
-        0,  # unused
-    )
-    # Wait — header is only 7 u32s (28 bytes). Fix:
+    # ResStringPool_header is 7 u32s (28 bytes).
     new_sp_header = struct.pack(
         "<IIIIIII",
         _CHUNK_STRING_POOL,
@@ -231,8 +217,8 @@ def _patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str
         sp_string_count,
         sp_style_count,
         sp_flags,
-        new_sp_strings_start_with_styles,
-        (new_sp_strings_start_with_styles + len(new_strings_blob)) if sp_style_count else 0,
+        new_sp_strings_start,
+        (new_sp_strings_start + len(new_strings_blob)) if sp_style_count else 0,
     )
 
     new_offsets_blob = struct.pack(f"<{sp_string_count}I", *new_offsets)

@@ -2,13 +2,21 @@
 In-memory job store for async pack jobs.
 
 Jobs are keyed by job_id (UUID). Consumers poll via asyncio.Queue per job.
+
+The store is process-local and bounded: it keeps at most :data:`MAX_JOBS`
+entries, evicting the oldest finished jobs first. Terminal state also lives in
+the ``jobs`` table, so evicting a completed job only costs the SSE stream —
+status remains available via the DB fallback.
 """
 
 import asyncio
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
+
+MAX_JOBS = 512
 
 
 class JobStatus(StrEnum):
@@ -41,15 +49,34 @@ class Job:
                 break
 
 
-_jobs: dict[str, Job] = {}
+_jobs: OrderedDict[str, Job] = OrderedDict()
+
+
+def _evict() -> None:
+    """Drop finished jobs, oldest first, until the store is back under cap."""
+    while len(_jobs) > MAX_JOBS:
+        for job_id, job in _jobs.items():
+            if job.status in (JobStatus.done, JobStatus.error):
+                del _jobs[job_id]
+                break
+        else:
+            # Nothing finished to reclaim; the cap gives way rather than
+            # dropping a job that is still running.
+            return
 
 
 def create_job() -> Job:
     job_id = str(uuid.uuid4())
     job = Job(job_id=job_id)
     _jobs[job_id] = job
+    _evict()
     return job
 
 
 def get_job(job_id: str) -> Job | None:
     return _jobs.get(job_id)
+
+
+def reset_jobs() -> None:
+    """Drop every tracked job. Test-only helper."""
+    _jobs.clear()

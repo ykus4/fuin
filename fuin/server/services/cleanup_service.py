@@ -27,10 +27,11 @@ def cleanup_old_records(engine) -> int:
 
     Returns the number of App rows deleted.
     """
-    if not config.CLEANUP_OLDER_THAN_DAYS:
+    older_than_days = config.get_settings().cleanup_older_than_days
+    if not older_than_days:
         return 0
 
-    cutoff = datetime.now(UTC) - timedelta(days=config.CLEANUP_OLDER_THAN_DAYS)
+    cutoff = datetime.now(UTC) - timedelta(days=older_than_days)
     with Session(engine) as s:
         old_apps = s.query(App).filter(App.created_at < cutoff).all()
         for app in old_apps:

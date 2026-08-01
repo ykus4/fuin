@@ -1,11 +1,15 @@
 """Server-side packer pipeline.
 
 Wraps :mod:`fuin.packer` for the FastAPI server: writes the packed APK to
-``config.PACKED_APK_DIR`` keyed by SHA-256, and returns ``(path, sha256, report)``.
+the configured packed-APK directory keyed by SHA-256, and returns
+``(path, sha256, report)``.
 """
 
+import contextlib
+import dataclasses
 import logging
 import os
+import uuid
 from collections.abc import Callable
 
 from fuin import config
@@ -39,31 +43,22 @@ def run_pipeline(
     """
     options = options or PackOptions()
     if app_class is not None:
-        options = PackOptions(
-            app_class=app_class,
-            encrypt_native=options.encrypt_native,
-            encrypt_assets=options.encrypt_assets,
-            encrypt_strings=options.encrypt_strings,
-            root_detection=options.root_detection,
-            emulator_detection=options.emulator_detection,
-            exclude_files=options.exclude_files,
-            strict_manifest_patch=options.strict_manifest_patch,
-            verify_signature=options.verify_signature,
-            keystore_path=options.keystore_path,
-            keystore_alias=options.keystore_alias,
-            keystore_store_pass=options.keystore_store_pass,
-            keystore_key_pass=options.keystore_key_pass,
-        )
+        options = dataclasses.replace(options, app_class=app_class)
 
-    os.makedirs(config.PACKED_APK_DIR, exist_ok=True)
+    packed_dir = config.get_settings().packed_apk_dir
+    os.makedirs(packed_dir, exist_ok=True)
 
-    # Write to a temporary location keyed off the timestamp of the call's
-    # input then rename to the SHA-256-keyed final path.
-    tmp_output = os.path.join(config.PACKED_APK_DIR, ".pending.apk")
-    result = pack_apk(input_apk_path, tmp_output, options=options, progress=progress)
-
-    dest = os.path.join(config.PACKED_APK_DIR, f"{result.sha256[:16]}_packed.apk")
-    os.replace(tmp_output, dest)
+    # Pack into a per-call temporary name — concurrent jobs would otherwise
+    # clobber each other — then rename to the SHA-256-keyed final path.
+    tmp_output = os.path.join(packed_dir, f".pending-{uuid.uuid4().hex}.apk")
+    try:
+        result = pack_apk(input_apk_path, tmp_output, options=options, progress=progress)
+        dest = os.path.join(packed_dir, f"{result.sha256[:16]}_packed.apk")
+        os.replace(tmp_output, dest)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_output)
+        raise
 
     if progress:
         progress("reporting", 97)

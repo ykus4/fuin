@@ -17,7 +17,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from fuin import config
-from fuin._utils import parse_env_bool
 from fuin.apk import create_debug_keystore, inject_encrypted_dex
 from fuin.crypto import encrypt_blob, generate_key
 from fuin.integrity import extract_cert_fingerprint
@@ -43,12 +42,16 @@ class PackOptions:
     app_class: str | None = None
     encrypt_native: bool = True
     encrypt_assets: bool = True
-    encrypt_strings: bool = False
-    root_detection: bool = False
-    emulator_detection: bool = False
-    exclude_files: tuple[str, ...] = field(default_factory=tuple)
+
+    # Tri-state: ``None`` defers to the corresponding environment setting,
+    # an explicit ``True``/``False`` always wins over it.
+    encrypt_strings: bool | None = None
+    root_detection: bool | None = None
+    emulator_detection: bool | None = None
     strict_manifest_patch: bool | None = None
     verify_signature: bool | None = None
+
+    exclude_files: tuple[str, ...] = field(default_factory=tuple)
 
     # Optional keystore overrides (CLI uses these; server inherits from config)
     keystore_path: str | None = None
@@ -78,20 +81,27 @@ def _pack_extra_dex(apk_path: str, key: bytes) -> bytes | None:
     return encrypt_blob(inner_buf.getvalue(), key)
 
 
-def _build_security_policy(options: PackOptions) -> bytes | None:
-    root = options.root_detection or parse_env_bool(os.environ.get("FUIN_ROOT_DETECTION"))
-    emu = options.emulator_detection or parse_env_bool(os.environ.get("FUIN_EMULATOR_DETECTION"))
+def _resolve(explicit: bool | None, fallback: bool) -> bool:
+    """Return ``explicit`` unless it was left unset, in which case ``fallback``."""
+    return fallback if explicit is None else explicit
+
+
+def _build_security_policy(options: PackOptions, settings: config.Settings) -> bytes | None:
+    root = _resolve(options.root_detection, settings.root_detection)
+    emu = _resolve(options.emulator_detection, settings.emulator_detection)
     if not root and not emu:
         return None
     return json.dumps({"root_detection": root, "emulator_detection": emu}).encode()
 
 
-def _resolve_keystore(options: PackOptions, tmpdir: str) -> tuple[str, str, str, str]:
+def _resolve_keystore(
+    options: PackOptions, settings: config.Settings, tmpdir: str
+) -> tuple[str, str, str, str]:
     """Return (path, alias, store_pass, key_pass). Falls back to a debug keystore."""
-    ks_path = options.keystore_path or config.KEYSTORE_PATH
-    alias = options.keystore_alias or config.KEYSTORE_ALIAS
-    sp = options.keystore_store_pass or config.KEYSTORE_STORE_PASS
-    kp = options.keystore_key_pass or config.KEYSTORE_KEY_PASS
+    ks_path = options.keystore_path or settings.keystore_path
+    alias = options.keystore_alias or settings.keystore_alias
+    sp = options.keystore_store_pass or settings.keystore_store_pass
+    kp = options.keystore_key_pass or settings.keystore_key_pass
 
     if not ks_path or not sp or not kp:
         log.warning("no keystore configured — using temporary debug keystore")
@@ -120,6 +130,7 @@ def pack_apk(
     ``(step_name, percent)`` if a callback is provided.
     """
     options = options or PackOptions()
+    settings = config.get_settings()
 
     def _progress(step: str, pct: int) -> None:
         log.info("%s (%d%%)", step, pct)
@@ -141,18 +152,14 @@ def pack_apk(
 
         _progress("patching_manifest", 20)
         found_class = patch_manifest(input_apk, step1, options.app_class)
-        strict = (
-            config.STRICT_MANIFEST_PATCH
-            if options.strict_manifest_patch is None
-            else options.strict_manifest_patch
-        )
+        strict = _resolve(options.strict_manifest_patch, settings.strict_manifest_patch)
         if strict and not found_class:
             raise ValueError(
                 "AndroidManifest.xml could not be patched with StubApplication. "
                 "Provide app_class explicitly or disable strict_manifest_patch."
             )
 
-        ks_path, alias, sp, kp = _resolve_keystore(options, tmpdir)
+        ks_path, alias, sp, kp = _resolve_keystore(options, settings, tmpdir)
 
         _progress("encrypting_dex", 40)
         with zipfile.ZipFile(input_apk, "r") as z:
@@ -160,7 +167,7 @@ def pack_apk(
 
         key = generate_key()
         string_key = None
-        if options.encrypt_strings or parse_env_bool(os.environ.get("FUIN_ENCRYPT_STRINGS")):
+        if _resolve(options.encrypt_strings, settings.encrypt_strings):
             dex_data, string_key = encrypt_dex_strings(dex_data, key)
             log.info("applied string encryption to classes.dex")
 
@@ -177,7 +184,7 @@ def pack_apk(
         except Exception as e:
             log.warning("could not extract cert fingerprint: %s", e)
 
-        security_policy = _build_security_policy(options)
+        security_policy = _build_security_policy(options, settings)
 
         exclude = set(options.exclude_files)
         native_result = (
@@ -217,12 +224,7 @@ def pack_apk(
         _progress("signing", 85)
         sign_apk(step3, ks_path, alias, sp, kp)
 
-        verify = (
-            config.VERIFY_SIGNATURE
-            if options.verify_signature is None
-            else options.verify_signature
-        )
-        if verify:
+        if _resolve(options.verify_signature, settings.verify_signature):
             if not verify_apk_signature(step3):
                 raise RuntimeError(
                     "verify_signature is enabled but apksigner was not found. "

@@ -14,6 +14,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from fuin import config
 from fuin.android_tools import require_build_tool
 
 log = logging.getLogger(__name__)
@@ -25,10 +26,10 @@ PREBUILT_DEX = FUIN_DIR.parent / "assets" / "stub.dex"
 
 def get_stub_dex() -> bytes:
     """Return the bytes of the compiled stub DEX, building if necessary."""
-    env_path = os.environ.get("FUIN_STUB_DEX")
-    if env_path and Path(env_path).is_file():
-        log.debug("using stub DEX from FUIN_STUB_DEX: %s", env_path)
-        return Path(env_path).read_bytes()
+    override = config.get_settings().stub_dex_path
+    if override and Path(override).is_file():
+        log.debug("using stub DEX from FUIN_STUB_DEX: %s", override)
+        return Path(override).read_bytes()
 
     if PREBUILT_DEX.is_file():
         log.debug("using pre-built stub DEX: %s", PREBUILT_DEX)

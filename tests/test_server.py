@@ -1,40 +1,29 @@
-import os
-
 import pytest
 from fastapi.testclient import TestClient
 
+from fuin.server import deps, jobs
+from fuin.server.main import app
 from tests.conftest import make_minimal_apk
 
 API_KEY = "test-key"
 
 
 @pytest.fixture
-def client(tmp_path):
-    os.environ["FUIN_API_KEY"] = API_KEY
-    os.environ["FUIN_PACKED_DIR"] = str(tmp_path / "packed")
-    os.environ["FUIN_DATABASE_URL"] = f"sqlite:///{tmp_path}/test.db"
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("FUIN_API_KEY", API_KEY)
+    monkeypatch.setenv("FUIN_PACKED_DIR", str(tmp_path / "packed"))
+    monkeypatch.setenv("FUIN_DATABASE_URL", f"sqlite:///{tmp_path}/test.db")
 
-    # Re-import config + server modules so the engine picks up new env vars
-    import importlib
-
-    import fuin.config as cfg
-
-    importlib.reload(cfg)
-
-    import fuin.server.deps as deps
-
+    # Settings are read from the environment per call, so only the cached
+    # engine and the in-memory job store need clearing between tests.
     deps.reset_engine()
-    importlib.reload(deps)
+    jobs.reset_jobs()
 
-    import fuin.server.main as srv_main
-
-    importlib.reload(srv_main)
-
-    with TestClient(srv_main.app) as c:
+    with TestClient(app) as c:
         yield c
 
-    for key in ("FUIN_API_KEY", "FUIN_PACKED_DIR", "FUIN_DATABASE_URL"):
-        os.environ.pop(key, None)
+    deps.reset_engine()
+    jobs.reset_jobs()
 
 
 def test_ui_accessible(client):

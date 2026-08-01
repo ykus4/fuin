@@ -1,10 +1,11 @@
 """Fire-and-forget webhook delivery for pack completion notifications."""
 
-import asyncio
 import logging
 from collections.abc import Iterable
 
 import httpx
+
+from fuin.server.background import spawn
 
 log = logging.getLogger(__name__)
 
@@ -33,4 +34,4 @@ async def _post(url: str, payload: dict, *, timeout: float = 10.0) -> None:
 def fire(urls: Iterable[str], payload: dict) -> None:
     """Schedule POSTs to every URL without awaiting them."""
     for url in urls:
-        asyncio.create_task(_post(url, payload))
+        spawn(_post(url, payload))
