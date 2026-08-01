@@ -57,6 +57,7 @@ fuin-pack pack MyApp.apk MyApp-protected.apk --report
 | [Architecture](https://ykus4.github.io/fuin/reference/architecture/) | Pack-time and runtime pipelines |
 | [Protection layers](https://ykus4.github.io/fuin/security/protection-layers/) · [Threat model](https://ykus4.github.io/fuin/security/threat-model/) | What it does and does not protect against |
 | [Development](https://ykus4.github.io/fuin/development/) | Tests, linting, migrations, contributing |
+| [Changelog](https://ykus4.github.io/fuin/changelog/) | Release history and migration notes |
 
 > [!WARNING]
 > The AES key is bundled inside the APK by design. That defeats static analysis, not
