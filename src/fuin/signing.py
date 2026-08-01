@@ -8,31 +8,38 @@ SDK / Java are unavailable.
 import base64
 import hashlib
 import io
-import os
 import struct
-import subprocess
 import zipfile
 from pathlib import Path
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
-from cryptography.hazmat.primitives.serialization import pkcs7, pkcs12
+from cryptography.hazmat.primitives.serialization import pkcs7
 
 from fuin._constants import (
     APK_SIG_BLOCK_MAGIC,
     APK_V2_BLOCK_ID,
     ZIP_EOCD_MAGIC,
 )
-from fuin.android_tools import find_build_tool
+from fuin._utils import copy_zip_entries
+from fuin.android_tools import find_build_tool, run_tool
+from fuin.keystore import load_key_and_cert
 
 _V2_ALG_RSASSA_PKCS1_SHA256 = 0x0103
+
+
+def _is_meta_inf(name: str) -> bool:
+    """Signature files are regenerated, never carried over."""
+    return name.startswith("META-INF/")
 
 
 def sign_apk(apk_path: str, keystore: str, key_alias: str, store_pass: str, key_pass: str) -> None:
     """Sign an APK with v1 + v2 signatures."""
     bin_path = find_build_tool("apksigner")
-    if bin_path and Path(bin_path).is_file():
-        result = subprocess.run(
+    if bin_path:
+        # check=False: a missing JRE is not fatal — we fall back to the
+        # pure-Python signer below. Any other failure is a real error.
+        result = run_tool(
             [
                 bin_path,
                 "sign",
@@ -46,9 +53,7 @@ def sign_apk(apk_path: str, keystore: str, key_alias: str, store_pass: str, key_
                 f"pass:{key_pass}",
                 apk_path,
             ],
-            capture_output=True,
-            text=True,
-            env=os.environ.copy(),
+            check=False,
         )
         if result.returncode == 0:
             return
@@ -62,15 +67,10 @@ def sign_apk(apk_path: str, keystore: str, key_alias: str, store_pass: str, key_
 def verify_apk_signature(apk_path: str) -> bool:
     """Verify the APK with apksigner. Returns False if apksigner is unavailable."""
     bin_path = find_build_tool("apksigner")
-    if not bin_path or not Path(bin_path).is_file():
+    if not bin_path:
         return False
 
-    result = subprocess.run(
-        [bin_path, "verify", "--verbose", apk_path],
-        capture_output=True,
-        text=True,
-        env=os.environ.copy(),
-    )
+    result = run_tool([bin_path, "verify", "--verbose", apk_path], check=False)
     if result.returncode != 0:
         details = result.stderr.strip() or result.stdout.strip()
         raise RuntimeError(f"apksigner verify failed:\n{details}")
@@ -83,14 +83,13 @@ def verify_apk_signature(apk_path: str) -> bool:
 
 
 def _sign_v1(apk_path: str, keystore_path: str, alias: str, password: str) -> None:
-    p12_data = Path(keystore_path).read_bytes()
-    private_key, cert, _ = pkcs12.load_key_and_certificates(p12_data, password.encode())
+    private_key, cert = load_key_and_cert(keystore_path, password)
 
     with zipfile.ZipFile(apk_path, "r") as zin:
         entries = {
             info.filename: zin.read(info.filename)
             for info in zin.infolist()
-            if not info.filename.startswith("META-INF/")
+            if not _is_meta_inf(info.filename)
         }
 
     def _b64(d: bytes) -> str:
@@ -127,9 +126,7 @@ def _sign_v1(apk_path: str, keystore_path: str, alias: str, password: str) -> No
         zipfile.ZipFile(apk_path, "r") as zin,
         zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout,
     ):
-        for info in zin.infolist():
-            if not info.filename.startswith("META-INF/"):
-                zout.writestr(info, zin.read(info.filename))
+        copy_zip_entries(zin, zout, skip=_is_meta_inf)
         zout.writestr("META-INF/MANIFEST.MF", manifest)
         zout.writestr(f"META-INF/{alias_upper}.SF", sf_bytes)
         zout.writestr(f"META-INF/{alias_upper}.RSA", sig_bytes)
@@ -144,8 +141,7 @@ def _sign_v1(apk_path: str, keystore_path: str, alias: str, password: str) -> No
 
 
 def _sign_v2(apk_path: str, keystore_path: str, password: str) -> None:
-    p12_data = Path(keystore_path).read_bytes()
-    private_key, cert, _ = pkcs12.load_key_and_certificates(p12_data, password.encode())
+    private_key, cert = load_key_and_cert(keystore_path, password)
 
     apk_data = bytearray(Path(apk_path).read_bytes())
 

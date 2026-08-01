@@ -1,7 +1,8 @@
-"""Locate Android build-tools binaries (apksigner, zipalign, d8)."""
+"""Locate and run Android build-tools binaries (apksigner, zipalign, d8)."""
 
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 
@@ -34,3 +35,22 @@ def require_build_tool(name: str) -> str:
             f"{name} not found. Set ANDROID_HOME or add Android build-tools to PATH."
         )
     return path
+
+
+def run_tool(
+    argv: list[str],
+    *,
+    cwd: str | Path | None = None,
+    what: str | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    """Run an external tool, capturing its output.
+
+    With ``check`` (the default) a non-zero exit raises ``RuntimeError``
+    carrying the tool's stderr. Pass ``check=False`` when the caller needs to
+    inspect the failure itself — e.g. to fall back to a pure-Python path.
+    """
+    result = subprocess.run(argv, cwd=cwd, capture_output=True, text=True)
+    if check and result.returncode != 0:
+        raise RuntimeError(f"{what or Path(argv[0]).name} failed:\n{result.stderr}")
+    return result

@@ -4,22 +4,21 @@ Stages: load_stub → patch_manifest → encrypt_dex → encrypt_libs/assets →
 inject → zipalign → sign → (verify) → done.
 """
 
-import hashlib
 import io
 import json
 import logging
 import os
-import re
 import shutil
 import tempfile
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from fuin import config
-from fuin.apk import create_debug_keystore, inject_encrypted_dex
+from fuin import config, keystore
+from fuin._constants import EXTRA_DEX_RE, PRIMARY_DEX
+from fuin._utils import sha256_file
+from fuin.apk import inject_encrypted_dex
 from fuin.crypto import encrypt_blob, generate_key
-from fuin.integrity import extract_cert_fingerprint
 from fuin.manifest import patch_manifest
 from fuin.native_lib import encrypt_native_libs
 from fuin.resource_encrypt import encrypt_resources
@@ -31,8 +30,6 @@ from fuin.zipalign import zipalign
 log = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[str, int], None]
-
-_EXTRA_DEX_RE = re.compile(r"^classes(\d+)\.dex$")
 
 
 @dataclass(frozen=True)
@@ -70,7 +67,7 @@ class PackResult:
 def _pack_extra_dex(apk_path: str, key: bytes) -> bytes | None:
     """Bundle classes2.dex, classes3.dex, ... into a ZIP, then encrypt as one blob."""
     with zipfile.ZipFile(apk_path, "r") as z:
-        extra = {name: z.read(name) for name in sorted(z.namelist()) if _EXTRA_DEX_RE.match(name)}
+        extra = {name: z.read(name) for name in sorted(z.namelist()) if EXTRA_DEX_RE.match(name)}
     if not extra:
         return None
 
@@ -92,30 +89,6 @@ def _build_security_policy(options: PackOptions, settings: config.Settings) -> b
     if not root and not emu:
         return None
     return json.dumps({"root_detection": root, "emulator_detection": emu}).encode()
-
-
-def _resolve_keystore(
-    options: PackOptions, settings: config.Settings, tmpdir: str
-) -> tuple[str, str, str, str]:
-    """Return (path, alias, store_pass, key_pass). Falls back to a debug keystore."""
-    ks_path = options.keystore_path or settings.keystore_path
-    alias = options.keystore_alias or settings.keystore_alias
-    sp = options.keystore_store_pass or settings.keystore_store_pass
-    kp = options.keystore_key_pass or settings.keystore_key_pass
-
-    if not ks_path or not sp or not kp:
-        log.warning("no keystore configured — using temporary debug keystore")
-        ks = create_debug_keystore(os.path.join(tmpdir, "debug.keystore"))
-        return ks["keystore"], ks["alias"], ks["store_pass"], ks["key_pass"]
-    return ks_path, alias, sp, kp
-
-
-def _sha256_file(path: str) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def pack_apk(
@@ -142,8 +115,8 @@ def pack_apk(
     log.debug("stub.dex size: %d bytes", len(stub_dex))
 
     with zipfile.ZipFile(input_apk, "r") as z:
-        if "classes.dex" not in z.namelist():
-            raise ValueError("APK does not contain classes.dex")
+        if PRIMARY_DEX not in z.namelist():
+            raise ValueError(f"APK does not contain {PRIMARY_DEX}")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         step1 = os.path.join(tmpdir, "step1_manifest.apk")
@@ -159,11 +132,11 @@ def pack_apk(
                 "Provide app_class explicitly or disable strict_manifest_patch."
             )
 
-        ks_path, alias, sp, kp = _resolve_keystore(options, settings, tmpdir)
+        ks = keystore.resolve(options, settings, tmpdir)
 
         _progress("encrypting_dex", 40)
         with zipfile.ZipFile(input_apk, "r") as z:
-            dex_data = z.read("classes.dex")
+            dex_data = z.read(PRIMARY_DEX)
 
         key = generate_key()
         string_key = None
@@ -180,7 +153,7 @@ def pack_apk(
 
         cert_fp = None
         try:
-            cert_fp = extract_cert_fingerprint(ks_path, sp)
+            cert_fp = keystore.extract_cert_fingerprint(ks.path, ks.store_pass)
         except Exception as e:
             log.warning("could not extract cert fingerprint: %s", e)
 
@@ -222,7 +195,7 @@ def pack_apk(
         zipalign(step2, step3)
 
         _progress("signing", 85)
-        sign_apk(step3, ks_path, alias, sp, kp)
+        sign_apk(step3, ks.path, ks.alias, ks.store_pass, ks.key_pass)
 
         if _resolve(options.verify_signature, settings.verify_signature):
             if not verify_apk_signature(step3):
@@ -234,6 +207,6 @@ def pack_apk(
 
         shutil.copy(step3, output_apk)
 
-    sha = _sha256_file(output_apk)
+    sha = sha256_file(output_apk)
     log.info("done: %s", output_apk)
     return PackResult(output_path=output_apk, sha256=sha, original_app_class=found_class or "")

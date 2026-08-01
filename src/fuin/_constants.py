@@ -1,5 +1,16 @@
 """Centralized constants for asset paths, AXML chunk types, and signing block IDs."""
 
+import re
+
+# ---------------------------------------------------------------------------
+# DEX entry names
+# ---------------------------------------------------------------------------
+PRIMARY_DEX = "classes.dex"
+# Any DEX: classes.dex, classes2.dex, ...
+DEX_NAME_RE = re.compile(r"^classes\d*\.dex$")
+# Multidex only, i.e. everything but the primary classes.dex.
+EXTRA_DEX_RE = re.compile(r"^classes(\d+)\.dex$")
+
 # ---------------------------------------------------------------------------
 # Injected asset paths
 # ---------------------------------------------------------------------------

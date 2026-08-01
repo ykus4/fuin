@@ -17,68 +17,22 @@ import io
 import logging
 import struct
 import zipfile
+from pathlib import Path
 
-from fuin._constants import (
-    ANDROID_NS as _ANDROID_NS,
+from fuin._constants import ANDROID_NS, AXML_FILE_MAGIC, CHUNK_STRING_POOL
+from fuin._utils import copy_zip_entries, read_u16, read_u32
+from fuin.axml import (
+    MANIFEST_NAME,
+    TYPE_STRING,
+    StringPool,
+    encode_pool_string_utf16,
+    iter_start_elements,
+    read_string_pool,
 )
-from fuin._constants import (
-    AXML_FILE_MAGIC,
-    CHUNK_STRING_POOL,
-    CHUNK_XML_START_ELEMENT,
-)
-from fuin._utils import read_u16 as _read_u16
-from fuin._utils import read_u32 as _read_u32
 
 log = logging.getLogger(__name__)
 
 STUB_CLASS = "com.fuin.stub.StubApplication"
-
-_CHUNK_STRING_POOL = CHUNK_STRING_POOL
-_CHUNK_XML_START_ELEMENT = CHUNK_XML_START_ELEMENT
-
-
-def _decode_pool_string(data: bytes, strings_start: int, offset: int, is_utf8: bool) -> str:
-    """Decode a single string from the string pool data section."""
-    if is_utf8:
-        # UTF-8 strings: char_count (u8/u16), byte_count (u8/u16), bytes, NUL
-        # char count
-        b0 = data[strings_start + offset]
-        if b0 & 0x80:
-            offset += 2
-        else:
-            offset += 1
-        # byte count
-        b0 = data[strings_start + offset]
-        if b0 & 0x80:
-            length = ((b0 & 0x7F) << 8) | data[strings_start + offset + 1]
-            offset += 2
-        else:
-            length = b0
-            offset += 1
-        raw = data[strings_start + offset : strings_start + offset + length]
-        return raw.decode("utf-8", errors="replace")
-    else:
-        # UTF-16LE strings: char_count (u16), chars, NUL u16
-        char_count = struct.unpack_from("<H", data, strings_start + offset)[0]
-        if char_count & 0x8000:
-            # Two-byte char count
-            lo = data[strings_start + offset + 1]
-            hi = data[strings_start + offset + 2] & 0x7F
-            char_count = (hi << 8) | lo
-            offset += 4
-        else:
-            offset += 2
-        raw = data[strings_start + offset : strings_start + offset + char_count * 2]
-        return raw.decode("utf-16-le", errors="replace")
-
-
-def _encode_pool_string_utf16(s: str) -> bytes:
-    """Encode a string in AXML UTF-16LE pool format: u16 char_count + utf16le data + u16 NUL."""
-    encoded = s.encode("utf-16-le")
-    char_count = len(s)
-    if char_count > 0x7FFF:
-        raise ValueError("String too long for AXML string pool")
-    return struct.pack("<H", char_count) + encoded + b"\x00\x00"
 
 
 # ---------------------------------------------------------------------------
@@ -97,40 +51,27 @@ def _patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str
         return data, ""
 
     # Verify AXML magic
-    magic = _read_u32(data, 0)
+    magic = read_u32(data, 0)
     if magic != AXML_FILE_MAGIC:
         log.warning("unexpected AXML magic 0x%08x — trying fallback patcher", magic)
         return _patch_axml_fallback(data, original_app_class)
 
-    # Locate string pool chunk
-    sp_offset = 8  # right after the file header
-    chunk_type = _read_u32(data, sp_offset)
-    if chunk_type != _CHUNK_STRING_POOL:
-        log.warning("expected string pool at offset 8, got 0x%08x — fallback", chunk_type)
+    sp_offset = 8  # string pool sits right after the file header
+    sp = read_string_pool(data, sp_offset)
+    if sp is None:
+        log.warning(
+            "expected string pool at offset 8, got 0x%08x — fallback", read_u32(data, sp_offset)
+        )
         return _patch_axml_fallback(data, original_app_class)
 
-    sp_chunk_size = _read_u32(data, sp_offset + 4)
-    sp_string_count = _read_u32(data, sp_offset + 8)
-    sp_style_count = _read_u32(data, sp_offset + 12)
-    sp_flags = _read_u32(data, sp_offset + 16)
-    sp_strings_start = _read_u32(data, sp_offset + 20)  # offset from chunk start
-    # sp_styles_start = _read_u32(data, sp_offset + 24)  # unused
-
-    is_utf8 = bool(sp_flags & 0x100)
-
-    # Offsets array: string_count u32 values, starting at sp_offset + 28
-    offsets_start = sp_offset + 28
-    strings_abs = sp_offset + sp_strings_start  # absolute offset in data where strings begin
-
-    # Decode all strings
-    pool: list[str] = []
-    for i in range(sp_string_count):
-        str_rel = _read_u32(data, offsets_start + i * 4)
-        try:
-            s = _decode_pool_string(data, strings_abs, str_rel, is_utf8)
-        except Exception:
-            s = ""
-        pool.append(s)
+    sp_chunk_size = sp.chunk_size
+    sp_string_count = sp.string_count
+    sp_style_count = sp.style_count
+    sp_flags = sp.flags
+    is_utf8 = sp.is_utf8
+    offsets_start = sp.offsets_start
+    strings_abs = sp.strings_abs
+    pool = sp.strings
 
     # --- Find the application class index ---
     # Strategy 1: look for an exact match of the provided original_app_class
@@ -149,7 +90,7 @@ def _patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str
 
     if target_idx is None:
         # Auto-detect: scan XML elements for android:name on <application> tag
-        target_idx, found_class = _find_application_name_attr(data, pool, sp_offset + sp_chunk_size)
+        target_idx, found_class = _find_application_name_attr(data, sp, sp_offset + sp_chunk_size)
 
     if target_idx is None:
         log.info("no Application android:name found — manifest left unchanged")
@@ -165,11 +106,11 @@ def _patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str
     new_strings: list[bytes] = []
     for i, s in enumerate(pool):
         if i == target_idx:
-            new_strings.append(_encode_pool_string_utf16(STUB_CLASS))
+            new_strings.append(encode_pool_string_utf16(STUB_CLASS))
         else:
             # Re-encode as-is from original bytes to preserve exact byte layout for others
-            str_rel = _read_u32(data, offsets_start + i * 4)
-            char_count = _read_u16(data, strings_abs + str_rel)
+            str_rel = read_u32(data, offsets_start + i * 4)
+            char_count = read_u16(data, strings_abs + str_rel)
             if char_count & 0x8000:
                 # extended length
                 char_count = ((data[strings_abs + str_rel + 2] & 0x7F) << 8) | data[
@@ -193,7 +134,7 @@ def _patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str
     # Style offsets (copy unchanged)
     styles_blob = b""
     if sp_style_count > 0:
-        orig_styles_start = _read_u32(data, sp_offset + 24)
+        orig_styles_start = read_u32(data, sp_offset + 24)
         if orig_styles_start:
             # Style data ends at sp_chunk_size from sp_offset
             orig_styles_abs = sp_offset + orig_styles_start
@@ -212,7 +153,7 @@ def _patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str
     # ResStringPool_header is 7 u32s (28 bytes).
     new_sp_header = struct.pack(
         "<IIIIIII",
-        _CHUNK_STRING_POOL,
+        CHUNK_STRING_POOL,
         new_sp_size,
         sp_string_count,
         sp_style_count,
@@ -232,7 +173,7 @@ def _patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str
     )
 
     # Patch file size in document header
-    old_file_size = _read_u32(data, 4)
+    old_file_size = read_u32(data, 4)
     new_file_size = old_file_size + len(new_sp_chunk) - sp_chunk_size
 
     result = bytearray(data)
@@ -245,65 +186,32 @@ def _patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str
 
 
 def _find_application_name_attr(
-    data: bytes, pool: list[str], chunks_start: int
+    data: bytes, pool: StringPool, chunks_start: int
 ) -> tuple[int | None, str]:
     """
     Walk XML element chunks to find the android:name attribute on <application>.
     Returns (pool_index, string_value) or (None, "").
     """
-    # Build index: pool string → index (for namespace lookup)
-    ns_idx = next((i for i, s in enumerate(pool) if s == _ANDROID_NS), None)
-    name_attr_idx = next((i for i, s in enumerate(pool) if s == "name"), None)
-    app_tag_idx = next((i for i, s in enumerate(pool) if s == "application"), None)
+    ns_idx = pool.index_of(ANDROID_NS)
+    name_attr_idx = pool.index_of("name")
+    app_tag_idx = pool.index_of("application")
 
-    pos = chunks_start
-    in_application = False
+    for elem in iter_start_elements(data, chunks_start):
+        if elem.name_index != app_tag_idx:
+            continue
 
-    while pos + 8 <= len(data):
-        chunk_type = _read_u32(data, pos)
-        chunk_size = _read_u32(data, pos + 4)
-        if chunk_size < 8 or pos + chunk_size > len(data):
-            break
-
-        if chunk_type == _CHUNK_XML_START_ELEMENT:
-            # StartElement: header(8) + lineNumber(4) + comment(4) + ns(4) + name(4)
-            #               + attrStart(2) + attrSize(2) + attrCount(2) + ...
-            elem_name_idx = _read_u32(data, pos + 20)
-            if elem_name_idx == app_tag_idx:
-                in_application = True
-            elif in_application:
-                in_application = False  # left <application>
-
-            if in_application:
-                attr_start = _read_u16(data, pos + 24)
-                attr_size = _read_u16(data, pos + 26)
-                attr_count = _read_u16(data, pos + 28)
-                attrs_base = pos + 16 + attr_start  # pos+16 = after 4 header u32s
-                for a in range(attr_count):
-                    a_off = attrs_base + a * attr_size
-                    if a_off + attr_size > len(data):
-                        break
-                    a_ns = _read_u32(data, a_off)
-                    a_name = _read_u32(data, a_off + 4)
-                    a_raw_val_idx = _read_u32(data, a_off + 8)
-                    # value type is at a_off+12 (ResValue: size u16, res0 u8, type u8, data u32)
-                    a_val_type = data[a_off + 15]  # type byte
-                    a_val_data = _read_u32(data, a_off + 16)
-
-                    if a_ns == ns_idx and a_name == name_attr_idx:
-                        # TYPE_STRING = 0x03
-                        if a_val_type == 0x03:
-                            val_idx = a_val_data
-                        elif 0 <= a_raw_val_idx < len(pool):
-                            val_idx = a_raw_val_idx
-                        else:
-                            continue
-                        if 0 <= val_idx < len(pool):
-                            s = pool[val_idx]
-                            if s and s != STUB_CLASS:
-                                return val_idx, s
-
-        pos += chunk_size
+        for attr in elem.attributes:
+            if attr.ns_index != ns_idx or attr.name_index != name_attr_idx:
+                continue
+            if attr.value_type == TYPE_STRING:
+                val_idx = attr.value_data
+            elif 0 <= attr.raw_value_index < len(pool.strings):
+                val_idx = attr.raw_value_index
+            else:
+                continue
+            s = pool.get(val_idx)
+            if s and s != STUB_CLASS:
+                return val_idx, s
 
     return None, ""
 
@@ -358,7 +266,7 @@ def patch_manifest(apk_path: str, output_path: str, original_app_class: str | No
     Returns the original application class name (or empty string if none).
     """
     with zipfile.ZipFile(apk_path, "r") as zin:
-        manifest_data = zin.read("AndroidManifest.xml")
+        manifest_data = zin.read(MANIFEST_NAME)
 
     patched, found_class = _patch_axml(manifest_data, original_app_class)
 
@@ -367,13 +275,8 @@ def patch_manifest(apk_path: str, output_path: str, original_app_class: str | No
         zipfile.ZipFile(apk_path, "r") as zin,
         zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout,
     ):
-        for item in zin.infolist():
-            if item.filename == "AndroidManifest.xml":
-                zout.writestr(item, patched)
-            else:
-                zout.writestr(item, zin.read(item.filename))
+        copy_zip_entries(zin, zout, replace={MANIFEST_NAME: patched})
 
-    with open(output_path, "wb") as f:
-        f.write(buf.getvalue())
+    Path(output_path).write_bytes(buf.getvalue())
 
     return found_class

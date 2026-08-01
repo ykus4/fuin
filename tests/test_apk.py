@@ -1,7 +1,8 @@
 import zipfile
 
-from fuin.apk import inject_encrypted_dex, zipalign
+from fuin.apk import inject_encrypted_dex
 from fuin.crypto import encrypt_dex, generate_key
+from fuin.zipalign import zipalign
 from tests.conftest import make_minimal_apk
 
 STUB_DEX = b"dex\n035\x00" + b"\x00" * 100

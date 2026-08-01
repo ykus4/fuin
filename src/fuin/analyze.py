@@ -4,17 +4,15 @@ Scans an APK and reports all files that can be encrypted by fuin,
 categorized by type (DEX, native libs, assets).
 """
 
-import re
 import zipfile
 from pathlib import Path
 
 from fuin._constants import (
+    DEX_NAME_RE,
     ENCRYPTED_LIBS_PREFIX,
     ENCRYPTED_RES_PREFIX,
     FUIN_INTERNAL_ASSETS,
 )
-
-_DEX_PATTERN = re.compile(r"^classes\d*\.dex$")
 
 
 def analyze_targets(apk_path: str) -> dict:
@@ -37,7 +35,7 @@ def analyze_targets(apk_path: str) -> dict:
             name = info.filename
             if name.endswith("/"):
                 continue
-            if _DEX_PATTERN.match(name):
+            if DEX_NAME_RE.match(name):
                 dex_files.append({"name": name, "size": info.file_size})
             elif name.startswith("lib/") and name.endswith(".so"):
                 native_files.append({"name": name, "size": info.file_size})

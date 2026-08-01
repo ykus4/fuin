@@ -3,8 +3,9 @@ name: CI
 on:
   push:
     branches: [main, dev]
+  # Unrestricted: limiting this to `branches: [main]` meant a PR targeting any
+  # other branch — a stacked PR, or anything aimed at `dev` — got no CI at all.
   pull_request:
-    branches: [main]
 
 jobs:
   lint:

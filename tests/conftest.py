@@ -167,7 +167,7 @@ def minimal_axml():
 
 @pytest.fixture
 def debug_keystore(tmp_path):
-    from fuin.apk import create_debug_keystore
+    from fuin.keystore import create_debug_keystore
 
     ks_path = str(tmp_path / "test.keystore")
     return create_debug_keystore(ks_path)

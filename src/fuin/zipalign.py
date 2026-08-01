@@ -5,24 +5,17 @@ pure-Python implementation so fuin works without the Android SDK installed.
 """
 
 import struct
-import subprocess
 from pathlib import Path
 
 from fuin._constants import ZIP_LFH_SIG
-from fuin.android_tools import find_build_tool
+from fuin.android_tools import find_build_tool, run_tool
 
 
 def zipalign(apk_path: str, output_path: str) -> None:
     """Align stored (uncompressed) ZIP entries to 4-byte boundaries."""
     bin_path = find_build_tool("zipalign")
-    if bin_path and Path(bin_path).is_file():
-        result = subprocess.run(
-            [bin_path, "-f", "-v", "4", apk_path, output_path],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"zipalign failed:\n{result.stderr}")
+    if bin_path:
+        run_tool([bin_path, "-f", "-v", "4", apk_path, output_path], what="zipalign")
         return
     _zipalign_py(apk_path, output_path)
 
