@@ -16,11 +16,13 @@ and instead operates on the raw string bytes in the DEX data section.
 
 import hashlib
 import struct
+import zlib
 
-from fuin._constants import STRING_KEY_ASSET as _STRING_KEY_ASSET
+from fuin._constants import STRING_KEY_ASSET
 
 DEX_MAGIC = b"dex\n"
-STRING_KEY_ASSET = _STRING_KEY_ASSET
+
+__all__ = ["DEX_MAGIC", "STRING_KEY_ASSET", "encrypt_dex_strings"]
 
 
 def encrypt_dex_strings(dex_data: bytes, key: bytes) -> tuple[bytes, bytes]:
@@ -41,7 +43,7 @@ def encrypt_dex_strings(dex_data: bytes, key: bytes) -> tuple[bytes, bytes]:
     xor_key = _derive_xor_key(key)
 
     # Parse DEX header to find string data section bounds
-    string_ids_off, string_ids_size = _get_string_ids(dex_data)
+    _, string_ids_size = _get_string_ids(dex_data)
     if string_ids_size == 0:
         return dex_data, xor_key
 
@@ -75,7 +77,8 @@ def _derive_xor_key(master_key: bytes, length: int = 256) -> bytes:
 
 def _get_string_ids(dex_data: bytes) -> tuple[int, int]:
     """Get string IDs table offset and count from DEX header."""
-    if len(dex_data) < 44:
+    # The two fields end at byte 64; a shorter buffer cannot be unpacked.
+    if len(dex_data) < 64:
         return 0, 0
     string_ids_size = struct.unpack_from("<I", dex_data, 56)[0]
     string_ids_off = struct.unpack_from("<I", dex_data, 60)[0]
@@ -84,7 +87,8 @@ def _get_string_ids(dex_data: bytes) -> tuple[int, int]:
 
 def _get_data_section(dex_data: bytes) -> tuple[int, int]:
     """Get the data section offset and size from DEX header."""
-    if len(dex_data) < 108:
+    # The two fields end at byte 112; a shorter buffer cannot be unpacked.
+    if len(dex_data) < 112:
         return 0, 0
     data_size = struct.unpack_from("<I", dex_data, 104)[0]
     data_off = struct.unpack_from("<I", dex_data, 108)[0]
@@ -94,13 +98,8 @@ def _get_data_section(dex_data: bytes) -> tuple[int, int]:
 def _fix_dex_header(dex: bytearray) -> None:
     """Recalculate DEX file checksum and SHA-1 signature."""
     # SHA-1 signature covers bytes 32..EOF
-    import hashlib as _hashlib
-
-    sha1 = _hashlib.sha1(dex[32:]).digest()
-    dex[12:32] = sha1
+    dex[12:32] = hashlib.sha1(dex[32:]).digest()
 
     # Adler32 checksum covers bytes 12..EOF
-    import zlib
-
     checksum = zlib.adler32(bytes(dex[12:])) & 0xFFFFFFFF
     struct.pack_into("<I", dex, 8, checksum)

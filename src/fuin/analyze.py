@@ -6,6 +6,7 @@ categorized by type (DEX, native libs, assets).
 
 import zipfile
 from pathlib import Path
+from typing import TypedDict
 
 from fuin._constants import (
     DEX_NAME_RE,
@@ -13,6 +14,13 @@ from fuin._constants import (
     ENCRYPTED_RES_PREFIX,
     FUIN_INTERNAL_ASSETS,
 )
+
+
+class FileEntry(TypedDict):
+    """One encryptable file in the analysis result."""
+
+    name: str
+    size: int
 
 
 def analyze_targets(apk_path: str) -> dict:
@@ -26,9 +34,9 @@ def analyze_targets(apk_path: str) -> dict:
     """
     apk_size = Path(apk_path).stat().st_size
 
-    dex_files = []
-    native_files = []
-    asset_files = []
+    dex_files: list[FileEntry] = []
+    native_files: list[FileEntry] = []
+    asset_files: list[FileEntry] = []
 
     with zipfile.ZipFile(apk_path, "r") as z:
         for info in z.infolist():

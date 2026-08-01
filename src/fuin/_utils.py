@@ -60,13 +60,12 @@ def fallback_package_name(axml: bytes) -> str:
         return "unknown"
     chunk = axml[idx : idx + 256]
     for encoding in ("utf-8", "utf-16-le"):
-        try:
-            text = chunk.decode(encoding, errors="ignore")
-            for p in text.split():
-                if "." in p and p.replace(".", "").replace("_", "").isalnum():
-                    return p
-        except Exception:
-            pass
+        # errors="ignore" already suppresses decode failures; nothing else here
+        # can raise, so a bare try/except would only hide real bugs.
+        text = chunk.decode(encoding, errors="ignore")
+        for p in text.split():
+            if "." in p and p.replace(".", "").replace("_", "").isalnum():
+                return p
     return "unknown"
 
 

@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 
 from fuin.server import deps, jobs
 from fuin.server.main import app
-from tests.conftest import make_minimal_apk
+from tests.fixtures import make_minimal_apk
 
 API_KEY = "test-key"
 

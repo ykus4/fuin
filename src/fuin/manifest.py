@@ -104,7 +104,7 @@ def _patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str
 
     # Build new pool: replace target string, recalculate offsets
     new_strings: list[bytes] = []
-    for i, s in enumerate(pool):
+    for i in range(len(pool)):
         if i == target_idx:
             new_strings.append(encode_pool_string_utf16(STUB_CLASS))
         else:
@@ -127,9 +127,9 @@ def _patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str
     # Compute new offsets
     new_offsets: list[int] = []
     pos = 0
-    for s in new_strings:
+    for blob in new_strings:
         new_offsets.append(pos)
-        pos += len(s)
+        pos += len(blob)
 
     # Style offsets (copy unchanged)
     styles_blob = b""
@@ -238,10 +238,10 @@ def _patch_axml_fallback(data: bytes, original_app_class: str | None) -> tuple[b
             s = m.group(0).decode("utf-16-le")
         except UnicodeDecodeError:
             continue
-        if "." in s and len(s) > 4 and not s.startswith("http"):
-            if "Application" in s or "App" in s:
-                best = (m.start(), m.end(), s)
-                break
+        looks_like_class = "." in s and len(s) > 4 and not s.startswith("http")
+        if looks_like_class and ("Application" in s or "App" in s):
+            best = (m.start(), m.end(), s)
+            break
 
     if best:
         start, end, found = best

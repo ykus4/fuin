@@ -26,8 +26,15 @@ def get_engine():
 
 
 def reset_engine() -> None:
-    """Drop the cached engine so the next call rebuilds it from the environment."""
+    """Drop the cached engine so the next call rebuilds it from the environment.
+
+    Disposes the connection pool first — dropping the reference alone leaks
+    every pooled connection, which showed up as ResourceWarnings once the
+    test suite started surfacing them.
+    """
     global _engine
+    if _engine is not None:
+        _engine.dispose()
     _engine = None
 
 

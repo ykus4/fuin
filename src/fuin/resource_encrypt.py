@@ -59,7 +59,7 @@ def encrypt_resources(
         res_map_entries[original_path] = encrypted_name
 
     res_map = json.dumps(res_map_entries).encode()
-    strip_patterns = [f"^{re.escape(p)}$" for p in assets.keys()]
+    strip_patterns = [f"^{re.escape(p)}$" for p in assets]
 
     return {
         "encrypted_resources": encrypted_resources,

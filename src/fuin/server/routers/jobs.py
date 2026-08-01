@@ -56,8 +56,8 @@ def get_job_status(job_id: str, jobs: Jobs, apps: Apps):
     return JobStatus(
         job_id=record.job_id,
         status=record.status,
-        step=record.progress_step,
-        pct=record.progress_pct,
+        step=record.progress_step or "",
+        pct=record.progress_pct or 0,
         result=result,
         error=record.error,
     )

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from fuin.server.pipeline import PackOptions, run_pipeline
-from tests.conftest import make_minimal_apk
+from tests.fixtures import make_minimal_apk
 
 
 @pytest.fixture
@@ -154,5 +154,5 @@ def test_pipeline_missing_dex_raises(tmp_path, monkeypatch):
     apk_path = str(tmp_path / "no_dex.apk")
     (tmp_path / "no_dex.apk").write_bytes(buf.getvalue())
 
-    with pytest.raises(ValueError, match="classes.dex"):
+    with pytest.raises(ValueError, match=r"classes\.dex"):
         run_pipeline(apk_path)

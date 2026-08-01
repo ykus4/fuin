@@ -47,17 +47,60 @@ dev = [
     "ruff>=0.15.15",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.0.0",
+    "mypy>=1.18.2",
     "httpx>=0.27.0",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "--strict-markers --strict-config"
+# The suite is warning-clean; keep it that way.
+filterwarnings = ["error"]
+xfail_strict = true
+
+[tool.coverage.run]
+source = ["fuin"]
+branch = true
+
+[tool.coverage.report]
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src/fuin"]
+# The codebase is annotated but was never type-checked, so this starts at a
+# level that passes today. Tighten as the untyped edges get annotated.
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
-ignore = ["E501"]
+# B (bugbear) and S (bandit) matter for a security tool; SIM/C4/RUF/PT are
+# cheap correctness-adjacent wins.
+select = ["E", "F", "I", "UP", "B", "S", "SIM", "C4", "RUF", "PT"]
+ignore = [
+    "E501",    # line length is enforced by the formatter
+    "S603",    # subprocess calls are the point of android_tools
+    "S404",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",    # assert is how tests assert
+    "S105",    # hardcoded test passwords
+    "S106",
+    "S324",    # sha1/adler32 appear because the DEX format mandates them
+]
+"src/fuin/string_encrypt.py" = ["S324"]  # DEX header mandates SHA-1
+"src/fuin/signing.py" = ["S324"]
+# FastAPI's dependency-injection idiom is a call in the argument default.
+"src/fuin/server/routers/*" = ["B008"]
+"src/fuin/keystore.py" = ["S105"]         # the debug keystore password is public by design
+"src/fuin/server/main.py" = ["S104"]      # binding 0.0.0.0 is the point of a container
