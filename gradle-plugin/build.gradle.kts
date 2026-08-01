@@ -14,7 +14,7 @@ repositories {
 dependencies {
     implementation(gradleApi())
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
-    implementation("org.json:json:20260522")
+    implementation("org.json:json:20260719")
 }
 
 gradlePlugin {
