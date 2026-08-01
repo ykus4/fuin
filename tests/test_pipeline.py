@@ -1,9 +1,11 @@
+import hashlib
 import os
 import zipfile
+from pathlib import Path
 
 import pytest
 
-from fuin.server.pipeline import PipelineOptions, run_pipeline
+from fuin.server.pipeline import PackOptions, run_pipeline
 from tests.conftest import make_minimal_apk
 
 
@@ -16,22 +18,27 @@ def input_apk(tmp_path):
 
 def test_pipeline_produces_apk(input_apk, tmp_path, monkeypatch):
     monkeypatch.setenv("FUIN_PACKED_DIR", str(tmp_path / "packed"))
-    packed_path, sig, report = run_pipeline(input_apk)
+    packed = run_pipeline(input_apk)
 
-    assert os.path.exists(packed_path)
-    assert packed_path.endswith(".apk")
+    assert os.path.exists(packed.path)
+    assert packed.path.endswith(".apk")
+    # The output is keyed by its own digest, so the two must agree.
+    assert len(packed.sha256) == 64
+    assert packed.sha256 == hashlib.sha256(Path(packed.path).read_bytes()).hexdigest()
+    assert os.path.basename(packed.path).startswith(packed.sha256[:16])
+    assert packed.report["size"]["after"] > packed.report["size"]["before"]
 
 
 def test_pipeline_output_is_valid_zip(input_apk, tmp_path, monkeypatch):
     monkeypatch.setenv("FUIN_PACKED_DIR", str(tmp_path / "packed"))
-    packed_path, _, _ = run_pipeline(input_apk)
+    packed_path = run_pipeline(input_apk).path
 
     assert zipfile.is_zipfile(packed_path)
 
 
 def test_pipeline_output_has_stub_dex(input_apk, tmp_path, monkeypatch):
     monkeypatch.setenv("FUIN_PACKED_DIR", str(tmp_path / "packed"))
-    packed_path, _, _ = run_pipeline(input_apk)
+    packed_path = run_pipeline(input_apk).path
 
     with zipfile.ZipFile(packed_path) as z:
         names = z.namelist()
@@ -52,10 +59,10 @@ def test_pipeline_respects_native_and_asset_options(tmp_path, monkeypatch):
         )
     )
 
-    packed_path, _, _ = run_pipeline(
+    packed_path = run_pipeline(
         str(apk),
-        options=PipelineOptions(encrypt_native=False, encrypt_assets=False),
-    )
+        options=PackOptions(encrypt_native=False, encrypt_assets=False),
+    ).path
 
     with zipfile.ZipFile(packed_path) as z:
         names = z.namelist()
@@ -77,10 +84,10 @@ def test_pipeline_respects_exclude_files(tmp_path, monkeypatch):
         )
     )
 
-    packed_path, _, _ = run_pipeline(
+    packed_path = run_pipeline(
         str(apk),
-        options=PipelineOptions(exclude_files=("assets/public.txt",)),
-    )
+        options=PackOptions(exclude_files=("assets/public.txt",)),
+    ).path
 
     with zipfile.ZipFile(packed_path) as z:
         names = z.namelist()
@@ -92,10 +99,10 @@ def test_pipeline_respects_exclude_files(tmp_path, monkeypatch):
 def test_pipeline_writes_security_policy_from_options(input_apk, tmp_path, monkeypatch):
     monkeypatch.setenv("FUIN_PACKED_DIR", str(tmp_path / "packed"))
 
-    packed_path, _, _ = run_pipeline(
+    packed_path = run_pipeline(
         input_apk,
-        options=PipelineOptions(root_detection=True, emulator_detection=True),
-    )
+        options=PackOptions(root_detection=True, emulator_detection=True),
+    ).path
 
     with zipfile.ZipFile(packed_path) as z:
         policy = z.read("assets/security_policy.json")
@@ -109,7 +116,7 @@ def test_pipeline_original_dex_not_in_output(input_apk, tmp_path, monkeypatch):
     with zipfile.ZipFile(input_apk) as z:
         original_dex = z.read("classes.dex")
 
-    packed_path, _, _ = run_pipeline(input_apk)
+    packed_path = run_pipeline(input_apk).path
 
     with zipfile.ZipFile(packed_path) as z:
         assert z.read("classes.dex") != original_dex
@@ -117,7 +124,7 @@ def test_pipeline_original_dex_not_in_output(input_apk, tmp_path, monkeypatch):
 
 def test_pipeline_returns_sha256(input_apk, tmp_path, monkeypatch):
     monkeypatch.setenv("FUIN_PACKED_DIR", str(tmp_path / "packed"))
-    _, sig, _ = run_pipeline(input_apk)
+    sig = run_pipeline(input_apk).sha256
 
     assert len(sig) == 64  # SHA-256 hex
     assert all(c in "0123456789abcdef" for c in sig)

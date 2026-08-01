@@ -1,8 +1,9 @@
 """Server-side packer pipeline.
 
-Wraps :mod:`fuin.packer` for the FastAPI server: writes the packed APK to
-the configured packed-APK directory keyed by SHA-256, and returns
-``(path, sha256, report)``.
+The single boundary between the FastAPI service and the core packer: nothing
+under :mod:`fuin.server` imports :mod:`fuin.packer`, :mod:`fuin.analyze` or
+:mod:`fuin.apk_info` directly. Writes the packed APK to the configured
+packed-APK directory keyed by SHA-256.
 """
 
 import contextlib
@@ -12,23 +13,46 @@ import os
 import uuid
 from collections.abc import Callable
 
-from fuin import config
+from fuin._constants import PRIMARY_DEX
+from fuin.analyze import analyze_targets as _analyze_targets
 from fuin.apk_info import get_apk_info
-from fuin.packer import PackOptions, pack_apk
+from fuin.packer import PackOptions, PackResult, pack_apk
 from fuin.report import generate_report
+from fuin.server.config import get_server_settings
 
 log = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[str, int], None]
 
-# Kept for backwards compatibility with prior callers.
-PipelineOptions = PackOptions
+__all__ = [
+    "PackOptions",
+    "PackedOutput",
+    "ProgressCallback",
+    "analyze_apk",
+    "analyze_targets",
+    "run_pipeline",
+]
+
+
+@dataclasses.dataclass(frozen=True)
+class PackedOutput:
+    """What a completed pipeline run produced."""
+
+    path: str
+    sha256: str
+    report: dict
 
 
 def analyze_apk(apk_path: str) -> dict:
+    """APK metadata, plus whether it has a primary DEX to pack."""
     info = get_apk_info(apk_path)
-    info.setdefault("has_classes_dex", "classes.dex" in info.get("dex_files", []))
+    info.setdefault("has_classes_dex", PRIMARY_DEX in info.get("dex_files", []))
     return info
+
+
+def analyze_targets(apk_path: str) -> dict:
+    """Preview what packing would encrypt."""
+    return _analyze_targets(apk_path)
 
 
 def run_pipeline(
@@ -36,23 +60,22 @@ def run_pipeline(
     app_class: str | None = None,
     progress: ProgressCallback | None = None,
     options: PackOptions | None = None,
-) -> tuple[str, str, dict]:
-    """Pack ``input_apk_path`` and store the output under ``PACKED_APK_DIR``.
-
-    Returns ``(packed_apk_path, sha256_hex, report)``.
-    """
+) -> PackedOutput:
+    """Pack ``input_apk_path`` and store the output under the packed-APK dir."""
     options = options or PackOptions()
     if app_class is not None:
         options = dataclasses.replace(options, app_class=app_class)
 
-    packed_dir = config.get_settings().packed_apk_dir
+    packed_dir = get_server_settings().packed_apk_dir
     os.makedirs(packed_dir, exist_ok=True)
 
     # Pack into a per-call temporary name — concurrent jobs would otherwise
     # clobber each other — then rename to the SHA-256-keyed final path.
     tmp_output = os.path.join(packed_dir, f".pending-{uuid.uuid4().hex}.apk")
     try:
-        result = pack_apk(input_apk_path, tmp_output, options=options, progress=progress)
+        result: PackResult = pack_apk(
+            input_apk_path, tmp_output, options=options, progress=progress
+        )
         dest = os.path.join(packed_dir, f"{result.sha256[:16]}_packed.apk")
         os.replace(tmp_output, dest)
     except BaseException:
@@ -66,4 +89,4 @@ def run_pipeline(
     if progress:
         progress("done", 100)
     log.info("pipeline complete dest=%s", dest)
-    return dest, result.sha256, report
+    return PackedOutput(path=dest, sha256=result.sha256, report=report)

@@ -11,11 +11,12 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from fuin import config
-from fuin.server.database import App, AppWebhook, JobRecord
+from fuin.server.config import get_server_settings
+from fuin.server.database import App
 from fuin.server.jobs import Job, JobStatus
-from fuin.server.models import PackResult
-from fuin.server.pipeline import PipelineOptions, analyze_apk, run_pipeline
+from fuin.server.pipeline import PackOptions, analyze_apk, run_pipeline
+from fuin.server.repositories import AppRepository, JobRepository
+from fuin.server.schemas import PackedApp
 from fuin.server.services import webhook_service
 
 log = logging.getLogger(__name__)
@@ -32,24 +33,24 @@ def update_job_record(
     error: str | None = None,
 ) -> None:
     """Update a JobRecord row. Swallows DB errors so they cannot kill the pack job."""
+    fields: dict[str, Any] = {}
+    if status:
+        fields["status"] = status
+    if step:
+        fields["progress_step"] = step
+    if pct is not None:
+        fields["progress_pct"] = pct
+    if app_id:
+        fields["app_id"] = app_id
+    if error:
+        fields["error"] = error
+    if status in ("done", "error"):
+        fields["finished_at"] = datetime.now(UTC)
+
     try:
-        with Session(engine) as s:
-            jr = s.get(JobRecord, job_id)
-            if not jr:
-                return
-            if status:
-                jr.status = status
-            if step:
-                jr.progress_step = step
-            if pct is not None:
-                jr.progress_pct = pct
-            if app_id:
-                jr.app_id = app_id
-            if error:
-                jr.error = error
-            if status in ("done", "error"):
-                jr.finished_at = datetime.now(UTC)
-            s.commit()
+        with Session(engine) as session:
+            JobRepository(session).update(job_id, **fields)
+            session.commit()
     except Exception as e:
         log.warning("failed to update job record %s: %s", job_id, e)
 
@@ -57,19 +58,16 @@ def update_job_record(
 def _save_app(
     engine, *, analysis: dict, apk_sig: str, packed_path: str, webhook_urls: list[str]
 ) -> App:
-    with Session(engine) as s:
+    with Session(engine) as session:
         entry = App(
             package_name=analysis.get("package_name", "unknown"),
             apk_signature=apk_sig,
             packed_apk_path=packed_path,
             analysis=analysis,
         )
-        s.add(entry)
-        s.flush()  # populate entry.app_id
-        for url in webhook_urls:
-            s.add(AppWebhook(app_id=entry.app_id, url=url))
-        s.commit()
-        s.refresh(entry)
+        AppRepository(session).add(entry, webhook_urls)
+        session.commit()
+        session.refresh(entry)
         return entry
 
 
@@ -109,7 +107,7 @@ async def run_pack_job(
             job.push({"status": "running", "step": step, "pct": pct})
             update_job_record(engine, job.job_id, status="running", step=step, pct=pct)
 
-        options = PipelineOptions(
+        options = PackOptions(
             encrypt_native=encrypt_native,
             encrypt_assets=encrypt_assets,
             encrypt_strings=encrypt_strings,
@@ -118,7 +116,7 @@ async def run_pack_job(
             exclude_files=exclude_files,
         )
 
-        packed_path, apk_sig, pack_report = await loop.run_in_executor(
+        packed = await loop.run_in_executor(
             None,
             lambda: run_pipeline(
                 tmp_path,
@@ -128,24 +126,24 @@ async def run_pack_job(
             ),
         )
 
-        webhook_urls = webhook_service.parse_urls(webhook_url, config.get_settings().webhook_url)
+        webhook_urls = webhook_service.parse_urls(webhook_url, get_server_settings().webhook_url)
         entry = await loop.run_in_executor(
             None,
             lambda: _save_app(
                 engine,
                 analysis=analysis,
-                apk_sig=apk_sig,
-                packed_path=packed_path,
+                apk_sig=packed.sha256,
+                packed_path=packed.path,
                 webhook_urls=webhook_urls,
             ),
         )
 
-        result: dict[str, Any] = PackResult(
+        result: dict[str, Any] = PackedApp(
             app_id=entry.app_id,
             package_name=entry.package_name,
-            apk_signature=apk_sig,
+            apk_signature=packed.sha256,
             analysis=analysis,
-            report=pack_report,
+            report=packed.report,
         ).model_dump()
 
         job.result = result
