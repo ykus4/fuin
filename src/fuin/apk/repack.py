@@ -1,11 +1,18 @@
-"""APK repack: inject the stub DEX and every fuin asset into a copy of the APK."""
+"""APK-level rewriting: patch the manifest, inject the stub DEX and fuin assets.
+
+This is the layer that owns ZIP I/O. The byte-level AXML work it delegates to
+:mod:`fuin.axml`.
+"""
 
 import io
 import re
 import zipfile
 from pathlib import Path
 
-from fuin._constants import (
+from fuin.apk.zip_tools import copy_zip_entries
+from fuin.axml.constants import MANIFEST_NAME
+from fuin.axml.patcher import patch_axml
+from fuin.contract import (
     CERT_FINGERPRINT_ASSET,
     DEX_NAME_RE,
     ENCRYPTED_DEX_ASSET,
@@ -20,7 +27,6 @@ from fuin._constants import (
     SECURITY_POLICY_ASSET,
     STRING_KEY_ASSET,
 )
-from fuin._utils import copy_zip_entries
 
 
 def inject_encrypted_dex(
@@ -42,7 +48,7 @@ def inject_encrypted_dex(
 ) -> None:
     """Repack the APK: replace classes.dex with stub_dex, embed all fuin assets."""
     if stub_dex is None:
-        from fuin.stub_dex import get_stub_dex
+        from fuin.apk.stub_dex import get_stub_dex
 
         stub_dex = get_stub_dex()
 
@@ -84,3 +90,25 @@ def inject_encrypted_dex(
             zout.writestr(STRING_KEY_ASSET, string_key)
 
     Path(output_path).write_bytes(buf.getvalue())
+
+
+def patch_manifest(apk_path: str, output_path: str, original_app_class: str | None) -> str:
+    """Rewrite AndroidManifest.xml inside the APK to point at the stub.
+
+    Returns the original application class name, or an empty string if none
+    could be identified.
+    """
+    with zipfile.ZipFile(apk_path, "r") as zin:
+        manifest_data = zin.read(MANIFEST_NAME)
+
+    patched, found_class = patch_axml(manifest_data, original_app_class)
+
+    buf = io.BytesIO()
+    with (
+        zipfile.ZipFile(apk_path, "r") as zin,
+        zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout,
+    ):
+        copy_zip_entries(zin, zout, replace={MANIFEST_NAME: patched})
+
+    Path(output_path).write_bytes(buf.getvalue())
+    return found_class

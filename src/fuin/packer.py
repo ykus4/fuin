@@ -14,18 +14,25 @@ import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from fuin import config, keystore
-from fuin._constants import EXTRA_DEX_RE, PRIMARY_DEX
-from fuin._utils import sha256_file
-from fuin.apk import inject_encrypted_dex
-from fuin.crypto import encrypt_blob, generate_key
-from fuin.manifest import patch_manifest
-from fuin.native_lib import encrypt_native_libs
-from fuin.resource_encrypt import encrypt_resources
-from fuin.signing import sign_apk, verify_apk_signature
-from fuin.string_encrypt import encrypt_dex_strings
-from fuin.stub_dex import get_stub_dex
-from fuin.zipalign import zipalign
+from fuin import config
+from fuin.apk import (
+    get_stub_dex,
+    inject_encrypted_dex,
+    keystore,
+    patch_manifest,
+    sha256_file,
+    sign_apk,
+    verify_apk_signature,
+    zipalign,
+)
+from fuin.contract import EXTRA_DEX_RE, PRIMARY_DEX
+from fuin.encryption import (
+    encrypt_blob,
+    encrypt_dex_strings,
+    encrypt_native_libs,
+    encrypt_resources,
+    generate_key,
+)
 
 log = logging.getLogger(__name__)
 

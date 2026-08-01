@@ -2,7 +2,7 @@
 
 from fastapi import HTTPException, UploadFile
 
-from fuin._constants import ZIP_LOCAL_HEADER_MAGIC
+from fuin.apk.constants import ZIP_LOCAL_HEADER_MAGIC
 
 
 def ensure_valid_apk(apk_bytes: bytes, *, filename: str | None) -> None:

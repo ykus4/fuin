@@ -17,11 +17,11 @@ import zipfile
 from pathlib import Path
 
 from fuin import config
-from fuin.android_tools import require_build_tool
+from fuin.apk.tools import require_build_tool
 
 log = logging.getLogger(__name__)
 
-FUIN_DIR = Path(__file__).parent
+FUIN_DIR = Path(__file__).parent.parent
 # Ships with the wheel, so `pip install fuin` can pack without an Android SDK.
 PREBUILT_DEX = FUIN_DIR / "assets" / "stub.dex"
 # Only present in a source checkout (src/fuin/ -> src/ -> repo root).

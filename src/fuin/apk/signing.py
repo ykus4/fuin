@@ -16,14 +16,10 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.serialization import pkcs7
 
-from fuin._constants import (
-    APK_SIG_BLOCK_MAGIC,
-    APK_V2_BLOCK_ID,
-    ZIP_EOCD_MAGIC,
-)
-from fuin._utils import copy_zip_entries
-from fuin.android_tools import find_build_tool, run_tool
-from fuin.keystore import load_key_and_cert
+from fuin.apk.constants import APK_SIG_BLOCK_MAGIC, APK_V2_BLOCK_ID, ZIP_EOCD_MAGIC
+from fuin.apk.keystore import load_key_and_cert
+from fuin.apk.tools import find_build_tool, run_tool
+from fuin.apk.zip_tools import copy_zip_entries
 
 _V2_ALG_RSASSA_PKCS1_SHA256 = 0x0103
 

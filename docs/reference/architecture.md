@@ -106,7 +106,7 @@ changing both.
 | `assets/encrypted_res/*` | The encrypted user assets |
 | `assets/string_key.bin` | XOR key for DEX string de-obfuscation |
 
-They are declared once in `src/fuin/_constants.py`.
+They are declared once in `src/fuin/contract.py`.
 
 ---
 
@@ -118,21 +118,29 @@ fuin/
 │   ├── cli.py                 # fuin-pack entry point
 │   ├── config.py              # packer settings
 │   ├── packer.py              # end-to-end pack orchestration
-│   ├── apk.py                 # APK repack: inject stub + assets
-│   ├── axml.py                # binary AXML reading primitives
-│   ├── manifest.py            # AXML string-pool patcher
-│   ├── apk_info.py            # read-only manifest inspection
-│   ├── crypto.py              # AES-256-GCM
-│   ├── keystore.py            # PKCS12 load, debug keystore, resolution
-│   ├── signing.py             # apksigner + pure-Python v1/v2 fallback
-│   ├── zipalign.py            # zipalign + pure-Python fallback
-│   ├── native_lib.py          # .so encryption
-│   ├── resource_encrypt.py    # asset encryption
-│   ├── string_encrypt.py      # DEX string obfuscation
-│   ├── stub_dex.py            # locate or build the stub DEX
-│   ├── analyze.py             # encryptable-target preview
-│   ├── report.py              # pack diff report
-│   ├── android_tools.py       # locate and run SDK build-tools
+│   ├── contract.py            # asset paths shared with the stub
+│   ├── axml/                  # Android Binary XML — byte level only
+│   │   ├── constants.py       #   chunk types, resource IDs
+│   │   ├── reader.py          #   parsing primitives
+│   │   ├── patcher.py         #   string-pool rewriting
+│   │   └── info.py            #   read-only manifest inspection
+│   ├── apk/                   # APK files — owns ZIP I/O and the SDK
+│   │   ├── constants.py       #   ZIP and signing-block magics
+│   │   ├── repack.py          #   inject stub + assets, patch manifest
+│   │   ├── signing.py         #   apksigner + pure-Python v1/v2 fallback
+│   │   ├── keystore.py        #   PKCS12 load, debug keystore, resolution
+│   │   ├── zipalign.py        #   zipalign + pure-Python fallback
+│   │   ├── stub_dex.py        #   locate or build the stub DEX
+│   │   ├── tools.py           #   locate and run SDK build-tools
+│   │   └── zip_tools.py       #   shared ZIP helpers
+│   ├── encryption/            # what gets encrypted
+│   │   ├── aes.py             #   AES-256-GCM
+│   │   ├── dex_strings.py     #   DEX string obfuscation
+│   │   ├── native_libs.py     #   .so encryption
+│   │   └── resources.py       #   asset encryption
+│   ├── reporting/
+│   │   ├── analyze.py         #   encryptable-target preview
+│   │   └── report.py          #   pack diff report
 │   ├── assets/stub.dex        # pre-built stub, ships in the wheel
 │   └── server/                # FastAPI service — `fuin[server]`
 │       ├── main.py            # app assembly
@@ -173,7 +181,18 @@ fuin/
 ## Layering
 
 **Core packer** (`src/fuin/`) knows nothing about HTTP or databases. It depends only
-on `cryptography` and `python-dotenv`.
+on `cryptography` and `python-dotenv`. Its four packages layer strictly downward:
+
+```text
+packer.py  →  apk/  →  axml/
+           ↘  encryption/
+           ↘  reporting/
+```
+
+`axml/` is purely byte-level — it never opens a ZIP or touches the filesystem, so it
+can be tested against buffers alone. `apk/` owns all ZIP I/O and the Android SDK
+toolchain; the manifest patch is an APK-level operation there
+(`apk.patch_manifest`) wrapping the byte-level `axml.patch_axml`.
 
 **Server** (`src/fuin/server/`) is layered:
 

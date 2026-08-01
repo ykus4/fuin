@@ -7,8 +7,8 @@ pure-Python implementation so fuin works without the Android SDK installed.
 import struct
 from pathlib import Path
 
-from fuin._constants import ZIP_LFH_SIG
-from fuin.android_tools import find_build_tool, run_tool
+from fuin.apk.constants import ZIP_LFH_SIG
+from fuin.apk.tools import find_build_tool, run_tool
 
 
 def zipalign(apk_path: str, output_path: str) -> None:

@@ -7,7 +7,14 @@ structured report showing size changes, encryption targets, and metadata.
 import zipfile
 from pathlib import Path
 
-from fuin._utils import fmt_size
+
+def fmt_size(size: int) -> str:
+    """Human-readable byte count."""
+    if size < 1024:
+        return f"{size} B"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
+    return f"{size / (1024 * 1024):.1f} MB"
 
 
 def generate_report(original_path: str, packed_path: str) -> dict:

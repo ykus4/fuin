@@ -1,5 +1,5 @@
 """
-Parse and patch AndroidManifest.xml (Android Binary XML / AXML format).
+Patch AndroidManifest.xml (Android Binary XML / AXML format).
 
 This is a proper structural AXML parser that rewrites the string pool in-place.
 It handles the common production case reliably without external dependencies.
@@ -13,34 +13,28 @@ AXML format (chunk-based):
   ...
 """
 
-import io
 import logging
 import struct
-import zipfile
-from pathlib import Path
 
-from fuin._constants import ANDROID_NS, AXML_FILE_MAGIC, CHUNK_STRING_POOL
-from fuin._utils import copy_zip_entries, read_u16, read_u32
-from fuin.axml import (
-    MANIFEST_NAME,
-    TYPE_STRING,
+from fuin.axml.constants import ANDROID_NS, AXML_FILE_MAGIC, CHUNK_STRING_POOL, TYPE_STRING
+from fuin.axml.reader import (
     StringPool,
     encode_pool_string_utf16,
     iter_start_elements,
     read_string_pool,
+    read_u16,
+    read_u32,
 )
+from fuin.contract import STUB_CLASS
 
 log = logging.getLogger(__name__)
-
-STUB_CLASS = "com.fuin.stub.StubApplication"
-
 
 # ---------------------------------------------------------------------------
 # Main patcher
 # ---------------------------------------------------------------------------
 
 
-def _patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str]:
+def patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str]:
     """
     Parse AXML binary, find the Application android:name string in the pool,
     replace it with STUB_CLASS.
@@ -54,7 +48,7 @@ def _patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str
     magic = read_u32(data, 0)
     if magic != AXML_FILE_MAGIC:
         log.warning("unexpected AXML magic 0x%08x — trying fallback patcher", magic)
-        return _patch_axml_fallback(data, original_app_class)
+        return _patch_fallback(data, original_app_class)
 
     sp_offset = 8  # string pool sits right after the file header
     sp = read_string_pool(data, sp_offset)
@@ -62,7 +56,7 @@ def _patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str
         log.warning(
             "expected string pool at offset 8, got 0x%08x — fallback", read_u32(data, sp_offset)
         )
-        return _patch_axml_fallback(data, original_app_class)
+        return _patch_fallback(data, original_app_class)
 
     sp_chunk_size = sp.chunk_size
     sp_string_count = sp.string_count
@@ -100,7 +94,7 @@ def _patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str
 
     # --- Rewrite the string pool with the stub class substituted ---
     if is_utf8:
-        return _patch_axml_fallback(data, found_class or original_app_class)
+        return _patch_fallback(data, found_class or original_app_class)
 
     # Build new pool: replace target string, recalculate offsets
     new_strings: list[bytes] = []
@@ -216,7 +210,7 @@ def _find_application_name_attr(
     return None, ""
 
 
-def _patch_axml_fallback(data: bytes, original_app_class: str | None) -> tuple[bytes, str]:
+def _patch_fallback(data: bytes, original_app_class: str | None) -> tuple[bytes, str]:
     """
     Byte-level fallback: find the class name encoded as UTF-16LE in the raw bytes and replace it.
     Used when the structural parser cannot identify the string pool layout.
@@ -256,27 +250,3 @@ def _patch_axml_fallback(data: bytes, original_app_class: str | None) -> tuple[b
         return patched, found
 
     return data, ""
-
-
-def patch_manifest(apk_path: str, output_path: str, original_app_class: str | None) -> str:
-    """
-    Patch AndroidManifest.xml inside the APK:
-    - Replace the Application android:name with StubApplication
-
-    Returns the original application class name (or empty string if none).
-    """
-    with zipfile.ZipFile(apk_path, "r") as zin:
-        manifest_data = zin.read(MANIFEST_NAME)
-
-    patched, found_class = _patch_axml(manifest_data, original_app_class)
-
-    buf = io.BytesIO()
-    with (
-        zipfile.ZipFile(apk_path, "r") as zin,
-        zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout,
-    ):
-        copy_zip_entries(zin, zout, replace={MANIFEST_NAME: patched})
-
-    Path(output_path).write_bytes(buf.getvalue())
-
-    return found_class

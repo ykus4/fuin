@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from fuin._constants import APK_SIG_BLOCK_MAGIC, APK_V2_BLOCK_ID
-from fuin.keystore import create_debug_keystore, extract_cert_fingerprint
-from fuin.signing import _find_eocd, _sign_v1, _sign_v2, verify_apk_signature
+from fuin.apk.constants import APK_SIG_BLOCK_MAGIC, APK_V2_BLOCK_ID
+from fuin.apk.keystore import create_debug_keystore, extract_cert_fingerprint
+from fuin.apk.signing import _find_eocd, _sign_v1, _sign_v2, verify_apk_signature
 from tests.fixtures import make_minimal_apk
 
 
@@ -121,7 +121,7 @@ def test_find_eocd_returns_none_without_a_zip():
 
 
 def test_verify_returns_false_when_apksigner_missing(apk, monkeypatch):
-    monkeypatch.setattr("fuin.signing.find_build_tool", lambda name: None)
+    monkeypatch.setattr("fuin.apk.signing.find_build_tool", lambda name: None)
     assert verify_apk_signature(apk) is False
 
 
