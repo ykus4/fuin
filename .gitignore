@@ -12,6 +12,9 @@ build/
 # uv
 # uv.lock is committed so Docker builds can use --frozen
 
+# mkdocs build output
+site/
+
 # fuin runtime artifacts
 data/
 

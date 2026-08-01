@@ -20,6 +20,8 @@ theme:
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+  logo: logo.png
+  favicon: logo.png
   features:
     - navigation.tabs
     - navigation.sections
@@ -32,6 +34,8 @@ theme:
 
 markdown_extensions:
   - admonition
+  - attr_list
+  - md_in_html
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
@@ -47,6 +51,27 @@ markdown_extensions:
 plugins:
   - search
 
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ykus4/fuin
+
 nav:
   - Home: index.md
-  - Threat Model: THREAT_MODEL.md
+  - Getting started:
+      - Installation: getting-started/installation.md
+      - Quickstart: getting-started/quickstart.md
+  - Guide:
+      - Web UI: guide/web-ui.md
+      - CLI: guide/cli.md
+      - REST API: guide/rest-api.md
+      - Gradle plugin: guide/gradle-plugin.md
+      - GitHub Action: guide/github-actions.md
+  - Reference:
+      - Configuration: reference/configuration.md
+      - API: reference/api.md
+      - Architecture: reference/architecture.md
+  - Security:
+      - Protection layers: security/protection-layers.md
+      - Threat model: security/threat-model.md
+  - Development: development/index.md

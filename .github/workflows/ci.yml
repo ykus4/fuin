@@ -166,6 +166,28 @@ jobs:
           assert actual == expected, f'schema drift: migrations={actual} models={expected}'
           print('tables match:', sorted(actual))"
 
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      # --strict turns broken internal links into failures, so a renamed page
+      # cannot silently orphan its references.
+      - name: Build docs
+        run: uv run mkdocs build --strict
+
   gradle-plugin:
     name: Gradle plugin
     runs-on: ubuntu-latest
