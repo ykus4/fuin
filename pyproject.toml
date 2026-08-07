@@ -10,7 +10,7 @@ license-files = ["LICENSE"]
 # Base install is the packer only. The web service is an extra so that
 # `fuin-pack` users are not made to install FastAPI, SQLAlchemy and friends.
 dependencies = [
-    "cryptography>=49.0.0",
+    "cryptography>=50.0.0",
     "python-dotenv>=1.2.2",
 ]
 
