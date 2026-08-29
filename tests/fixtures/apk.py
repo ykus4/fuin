@@ -6,16 +6,24 @@ import zipfile
 from tests.fixtures.axml import make_axml
 
 
+def make_apk_with_manifest(manifest: bytes, **kwargs) -> bytes:
+    """A minimal APK wrapping a manifest the caller built themselves."""
+    return make_minimal_apk(manifest=manifest, **kwargs)
+
+
 def make_minimal_apk(
     app_class: str = "com.example.MyApp",
     dex_content: bytes = b"dex\n035\x00" + b"\x00" * 100,
     extra_dex: dict[str, bytes] | None = None,
     extra_files: dict[str, bytes] | None = None,
+    manifest: bytes | None = None,
 ) -> bytes:
     """Build a minimal valid APK (ZIP) with AndroidManifest.xml + classes.dex."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("AndroidManifest.xml", make_axml(app_class))
+        z.writestr(
+            "AndroidManifest.xml", manifest if manifest is not None else make_axml(app_class)
+        )
         z.writestr("classes.dex", dex_content)
         if extra_dex:
             for name, data in extra_dex.items():

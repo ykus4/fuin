@@ -9,7 +9,17 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, create_engine, func
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    create_engine,
+    event,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -76,7 +86,31 @@ class JobRecord(Base):
 
 
 def make_engine(database_url: str):
-    return create_engine(database_url, connect_args={"check_same_thread": False})
+    """Build the engine, applying SQLite-specific settings only to SQLite.
+
+    ``check_same_thread`` is a SQLite connect argument; passing it to any other
+    driver is a TypeError, which made FUIN_DATABASE_URL SQLite-only in practice
+    despite being documented as any SQLAlchemy URL.
+    """
+    if not database_url.startswith("sqlite"):
+        return create_engine(database_url)
+
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+
+    @event.listens_for(engine, "connect")
+    def _configure_sqlite(dbapi_connection, _record):
+        # WAL lets the progress writes from a pack job proceed while a request
+        # reads; busy_timeout turns the remaining contention into a short wait
+        # instead of an immediate "database is locked".
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cursor.close()
+
+    return engine
 
 
 def init_db(engine) -> None:

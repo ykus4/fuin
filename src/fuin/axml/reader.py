@@ -10,7 +10,7 @@ Purely byte-level: nothing here touches a ZIP or the filesystem.
 Layout (chunk-based):
   0x00080003  — XML document header
   0x001C0001  — String pool chunk
-  0x00180002  — Resource map chunk
+  0x00080180  — Resource map chunk
   0x00100102  — Start element
   0x00100103  — End element
 """
@@ -58,37 +58,64 @@ def fallback_package_name(axml: bytes) -> str:
     return "unknown"
 
 
-def decode_pool_string(data: bytes, strings_abs: int, offset: int, is_utf8: bool) -> str:
-    """Decode one string from the pool's data section.
+def _utf8_length(data: bytes, pos: int) -> tuple[int, int]:
+    """``(value, header_bytes)`` for one UTF-8 pool length at ``pos``.
 
-    Both encodings prefix the payload with a length that switches to two bytes
-    when the high bit is set.
+    A high bit on the first byte means the length spans two bytes.
     """
+    b0 = data[pos]
+    if b0 & 0x80:
+        return ((b0 & 0x7F) << 8) | data[pos + 1], 2
+    return b0, 1
+
+
+def _utf16_length(data: bytes, pos: int) -> tuple[int, int]:
+    """``(char_count, header_bytes)`` for one UTF-16 pool length at ``pos``.
+
+    A high bit on the first u16 means the count spans two u16s, high half
+    first. The obvious byte-level reading of that — mixing the low byte of one
+    u16 with a byte of the next — silently truncates counts above 0x7FFF.
+    """
+    first = read_u16(data, pos)
+    if first & 0x8000:
+        return (((first & 0x7FFF) << 16) | read_u16(data, pos + 2), 4)
+    return first, 2
+
+
+def pool_entry_span(data: bytes, strings_abs: int, offset: int, is_utf8: bool) -> tuple[int, int]:
+    """Where one pool entry's payload starts and how many bytes it spans.
+
+    Both are absolute offsets into ``data``. The returned end is past the
+    payload but before the NUL terminator.
+    """
+    pos = strings_abs + offset
     if is_utf8:
         # char count, then byte count, then the bytes, then a NUL.
-        b0 = data[strings_abs + offset]
-        offset += 2 if b0 & 0x80 else 1
-        b0 = data[strings_abs + offset]
-        if b0 & 0x80:
-            length = ((b0 & 0x7F) << 8) | data[strings_abs + offset + 1]
-            offset += 2
-        else:
-            length = b0
-            offset += 1
-        raw = data[strings_abs + offset : strings_abs + offset + length]
-        return raw.decode("utf-8", errors="replace")
+        _, char_header = _utf8_length(data, pos)
+        byte_count, byte_header = _utf8_length(data, pos + char_header)
+        start = pos + char_header + byte_header
+        return start, byte_count
 
-    # UTF-16LE: char count (u16), chars, NUL u16.
-    char_count = read_u16(data, strings_abs + offset)
-    if char_count & 0x8000:
-        lo = data[strings_abs + offset + 1]
-        hi = data[strings_abs + offset + 2] & 0x7F
-        char_count = (hi << 8) | lo
-        offset += 4
-    else:
-        offset += 2
-    raw = data[strings_abs + offset : strings_abs + offset + char_count * 2]
-    return raw.decode("utf-16-le", errors="replace")
+    char_count, header = _utf16_length(data, pos)
+    return pos + header, char_count * 2
+
+
+def raw_pool_entry(data: bytes, strings_abs: int, offset: int, is_utf8: bool) -> bytes:
+    """The exact bytes of one pool entry, length header and terminator included.
+
+    Used when rewriting the pool: entries other than the one being replaced are
+    copied verbatim rather than re-encoded.
+    """
+    start, length = pool_entry_span(data, strings_abs, offset, is_utf8)
+    terminator = 1 if is_utf8 else 2
+    return data[strings_abs + offset : start + length + terminator]
+
+
+def decode_pool_string(data: bytes, strings_abs: int, offset: int, is_utf8: bool) -> str:
+    """Decode one string from the pool's data section."""
+    start, length = pool_entry_span(data, strings_abs, offset, is_utf8)
+    raw = data[start : start + length]
+    return raw.decode("utf-8" if is_utf8 else "utf-16-le", errors="replace")
 
 
 def encode_pool_string_utf16(s: str) -> bytes:
@@ -149,12 +176,20 @@ def read_string_pool(data: bytes, sp_offset: int) -> StringPool | None:
     offsets_start = sp_offset + _POOL_HEADER_SIZE
     strings_abs = sp_offset + strings_start
 
+    # `string_count` is an attacker-controlled u32 and each entry needs a
+    # 4-byte offset, so anything past the end of the buffer is a lie. Without
+    # this bound a 36-byte manifest claiming 0xFFFFFFFF strings allocates a
+    # multi-gigabyte list of placeholders before failing.
+    usable = max(len(data) - offsets_start, 0) // 4
+    if string_count > usable:
+        return None
+
     strings: list[str] = []
     for i in range(string_count):
         try:
             rel = read_u32(data, offsets_start + i * 4)
             strings.append(decode_pool_string(data, strings_abs, rel, is_utf8))
-        except Exception:
+        except (struct.error, IndexError, UnicodeDecodeError):
             # A single malformed entry must not lose the rest of the pool;
             # indices have to stay aligned, so append a placeholder.
             strings.append("")
@@ -163,7 +198,9 @@ def read_string_pool(data: bytes, sp_offset: int) -> StringPool | None:
     rm_offset = sp_offset + chunk_size
     if rm_offset + 8 <= len(data) and read_u32(data, rm_offset) == CHUNK_RESOURCE_MAP:
         rm_size = read_u32(data, rm_offset + 4)
-        res_ids = [read_u32(data, rm_offset + 8 + i * 4) for i in range((rm_size - 8) // 4)]
+        # Same reasoning: clamp the declared chunk size to what is really there.
+        rm_end = min(rm_offset + rm_size, len(data))
+        res_ids = [read_u32(data, off) for off in range(rm_offset + 8, rm_end - 3, 4)]
 
     return StringPool(
         strings=strings,

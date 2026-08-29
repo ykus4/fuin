@@ -4,6 +4,7 @@ The engine is built lazily on first use, so a test setup only has to point
 ``FUIN_DATABASE_URL`` somewhere else and call :func:`reset_engine`.
 """
 
+import secrets
 from collections.abc import Generator
 from typing import Annotated
 
@@ -79,5 +80,10 @@ def verify_api_key(
 ) -> None:
     provided = x_api_key or api_key
     expected = get_server_settings().admin_api_key
-    if not expected or provided != expected:
+    if not expected:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    # compare_digest, not ==: a plain comparison returns as soon as two bytes
+    # differ, which leaks the key one character at a time to anyone who can
+    # time the response.
+    if not secrets.compare_digest(provided or "", expected):
         raise HTTPException(status_code=401, detail="Invalid API key")

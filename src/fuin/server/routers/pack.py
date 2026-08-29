@@ -4,11 +4,10 @@ import asyncio
 import os
 import tempfile
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from fuin.server import pipeline
 from fuin.server.background import spawn
-from fuin.server.config import get_server_settings
 from fuin.server.deps import Jobs, get_engine, verify_api_key
 from fuin.server.jobs import create_job
 from fuin.server.routers.uploads import read_apk_upload
@@ -48,16 +47,6 @@ async def pack_apk(
     emulator_detection: bool | None = Form(default=None),
 ):
     apk_bytes = await read_apk_upload(file)
-
-    max_upload_bytes = get_server_settings().max_upload_bytes
-    if len(apk_bytes) > max_upload_bytes:
-        raise HTTPException(
-            status_code=413,
-            detail=(
-                f"APK too large: {len(apk_bytes) // (1024 * 1024)} MB "
-                f"(limit: {max_upload_bytes // (1024 * 1024)} MB)"
-            ),
-        )
 
     job = create_job()
     jobs.create(job.job_id)

@@ -5,9 +5,10 @@ prepares them for injection into the APK as encrypted assets.
 """
 
 import json
-import zipfile
 
+from fuin.contract import is_native_lib
 from fuin.encryption.aes import encrypt_blob
+from fuin.encryption.entries import EncryptedEntries, read_matching_entries
 
 
 def encrypt_native_libs(
@@ -15,25 +16,24 @@ def encrypt_native_libs(
     key: bytes,
     *,
     exclude_files: set[str] | None = None,
-) -> dict | None:
-    """Encrypt native libraries found in the APK. Returns None if none found."""
+) -> EncryptedEntries | None:
+    """Encrypt native libraries found in the APK. Returns None if none found.
+
+    Only the libraries that were actually encrypted are stripped. Returning a
+    blanket ``lib/**/*.so`` strip pattern also deleted every excluded library,
+    which shipped an APK missing code nothing could load.
+    """
     exclude_files = exclude_files or set()
-    libs: dict[str, bytes] = {}
-
-    with zipfile.ZipFile(apk_path, "r") as z:
-        for name in z.namelist():
-            if name.startswith("lib/") and name.endswith(".so") and name not in exclude_files:
-                libs[name] = z.read(name)
-
+    libs = read_matching_entries(apk_path, is_native_lib, exclude_files)
     if not libs:
         return None
 
-    encrypted_libs: dict[str, bytes] = {}
+    blobs: dict[str, bytes] = {}
     manifest_entries = []
 
     for original_path, data in libs.items():
         safe_name = original_path.replace("/", "_") + ".enc"
-        encrypted_libs[safe_name] = encrypt_blob(data, key)
+        blobs[safe_name] = encrypt_blob(data, key)
         manifest_entries.append(
             {
                 "original_path": original_path,
@@ -42,8 +42,8 @@ def encrypt_native_libs(
             }
         )
 
-    return {
-        "encrypted_libs": encrypted_libs,
-        "manifest": json.dumps(manifest_entries).encode(),
-        "strip_patterns": [r"^lib/.*\.so$"],
-    }
+    return EncryptedEntries(
+        blobs=blobs,
+        index=json.dumps(manifest_entries).encode(),
+        strip_names=frozenset(libs),
+    )

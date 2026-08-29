@@ -22,6 +22,15 @@ Only the server reads these. The packer ignores them.
 | `FUIN_MAX_MAPPING_MB` | no | `50` | Largest accepted ProGuard mapping upload, in MB |
 | `FUIN_CLEANUP_DAYS` | no | `30` | Delete packed apps older than this many days at startup. `0` disables cleanup. |
 | `FUIN_WEBHOOK_URL` | no | — | Comma-separated URLs to POST to when a pack job finishes |
+| `FUIN_WEBHOOK_ALLOW_HTTP` | no | `false` | Permit `http://` webhook targets as well as `https://` |
+
+!!! warning "Webhook targets are validated"
+
+    The webhook URL can also be supplied per request, which makes it a
+    server-side request forgery vector. fuin therefore requires `https` and
+    refuses any target that resolves to a private, loopback, link-local,
+    reserved or multicast address — cloud instance-metadata endpoints included.
+    Rejected URLs are dropped with a warning rather than failing the pack.
 
 ---
 

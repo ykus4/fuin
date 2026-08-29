@@ -5,7 +5,7 @@ filesystem. The APK-level wrappers live in :mod:`fuin.apk`.
 """
 
 from fuin.axml.constants import ANDROID_NS, MANIFEST_NAME
-from fuin.axml.info import get_apk_info
+from fuin.axml.info import empty_manifest_info, parse_manifest
 from fuin.axml.patcher import patch_axml
 from fuin.axml.reader import (
     Attribute,
@@ -26,9 +26,10 @@ __all__ = [
     "StringPool",
     "body_offset",
     "decode_pool_string",
+    "empty_manifest_info",
     "encode_pool_string_utf16",
-    "get_apk_info",
     "iter_start_elements",
+    "parse_manifest",
     "patch_axml",
     "read_string_pool",
 ]

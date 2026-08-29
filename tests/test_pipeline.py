@@ -96,6 +96,33 @@ def test_pipeline_respects_exclude_files(tmp_path, monkeypatch):
         assert any(name.startswith("assets/encrypted_res/") for name in names)
 
 
+def test_pipeline_keeps_excluded_native_libs(tmp_path, monkeypatch):
+    """An excluded .so must survive in the clear, not vanish.
+
+    The native encryptor returned a blanket `^lib/.*\\.so$` strip pattern
+    regardless of what it had actually encrypted, so excluding a library meant
+    it was neither encrypted nor shipped — the APK lost it entirely.
+    """
+    monkeypatch.setenv("FUIN_PACKED_DIR", str(tmp_path / "packed"))
+    kept = "lib/arm64-v8a/libkept.so"
+    encrypted = "lib/arm64-v8a/libsecret.so"
+    apk = tmp_path / "input.apk"
+    apk.write_bytes(
+        make_minimal_apk(
+            extra_files={kept: b"\x7fELF" + b"KEPT", encrypted: b"\x7fELF" + b"SECRET"}
+        )
+    )
+
+    packed_path = run_pipeline(str(apk), options=PackOptions(exclude_files=(kept,))).path
+
+    with zipfile.ZipFile(packed_path) as z:
+        names = z.namelist()
+        assert kept in names
+        assert z.read(kept) == b"\x7fELF" + b"KEPT"
+        assert encrypted not in names
+        assert any(name.startswith("assets/encrypted_libs/") for name in names)
+
+
 def test_pipeline_writes_security_policy_from_options(input_apk, tmp_path, monkeypatch):
     monkeypatch.setenv("FUIN_PACKED_DIR", str(tmp_path / "packed"))
 

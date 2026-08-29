@@ -47,7 +47,12 @@ The core packer is grouped by concern rather than kept flat:
 | `apk/` | ZIP I/O, signing, alignment, the Android SDK toolchain |
 | `encryption/` | AES, DEX strings, native libraries, assets |
 | `reporting/` | Read-only views: analysis and the pack diff |
-| `contract.py` | The asset paths shared with the Kotlin stub |
+| `contract.py` | The asset paths and entry selectors shared with the Kotlin stub |
+
+Within `apk/`, `zip_format.py` parses raw ZIP records (EOCD, central directory,
+local headers) and `zip_tools.py` works through `zipfile`. Alignment and v2
+signing both need the former, because `zipfile` will not tell you where the
+central directory physically sits.
 
 Dependencies run downward only: `packer.py` → `apk/` → `axml/`. If you find yourself
 importing `apk` from `axml`, the code probably belongs on the other side of that line.
@@ -66,14 +71,28 @@ tests/
 │   ├── axml.py          # hand-rolled binary AXML
 │   └── apk.py           # minimal APK (ZIP)
 ├── conftest.py          # fixtures only
-├── test_apk.py
+├── test_apk.py          # injection + alignment, including the pure-Python aligner
+├── test_axml_malformed.py  # untrusted-manifest handling
 ├── test_crypto.py
 ├── test_manifest.py
 ├── test_pipeline.py     # end-to-end pack
-├── test_server.py       # FastAPI endpoints
+├── test_server.py       # FastAPI endpoints, including a job run to completion
 ├── test_signing.py      # v1/v2 signing, cert fingerprint
-└── test_string_encrypt.py
+├── test_string_encrypt.py
+└── test_webhooks.py     # webhook target validation (SSRF)
 ```
+
+### Exercise the fallbacks
+
+`zipalign` and `sign_apk` prefer the Android SDK binaries and fall back to
+pure-Python implementations. A test that calls the public function therefore
+tests whichever path this machine happens to have — and on a developer machine
+with `ANDROID_HOME` set, that is never the fallback. Both fallbacks shipped
+broken for exactly that reason.
+
+Call `_zipalign_py` / `_sign_v1` / `_sign_v2` directly when the fallback is what
+you mean to test, and gate any test of the real binaries on
+`find_build_tool(...) is None`.
 
 Builders live in `tests/fixtures/` rather than `conftest.py` on purpose: pytest
 treats conftest specially, and importing helpers from it leaks that into anything

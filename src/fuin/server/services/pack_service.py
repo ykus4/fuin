@@ -3,6 +3,7 @@ persists results to the database, and dispatches webhooks.
 """
 
 import asyncio
+import contextlib
 import logging
 import os
 import tempfile
@@ -95,16 +96,18 @@ async def run_pack_job(
             tmp.write(apk_bytes)
             tmp_path = tmp.name
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         analysis = await loop.run_in_executor(None, analyze_apk, tmp_path)
 
         if not analysis.get("has_classes_dex"):
             raise ValueError("APK does not contain classes.dex")
 
         def _on_progress(step: str, pct: int) -> None:
+            # Called from the executor thread, so the queue write has to be
+            # marshalled back onto the loop.
             job.progress_step = step
             job.progress_pct = pct
-            job.push({"status": "running", "step": step, "pct": pct})
+            job.push_threadsafe(loop, {"status": "running", "step": step, "pct": pct})
             update_job_record(engine, job.job_id, status="running", step=step, pct=pct)
 
         options = PackOptions(
@@ -158,10 +161,29 @@ async def run_pack_job(
 
     except Exception as exc:
         log.exception("pack job %s failed", job.job_id)
+        message = _client_safe_error(exc)
         job.status = JobStatus.error
-        job.error = str(exc)
-        job.push({"status": JobStatus.error, "step": "error", "pct": 0, "error": str(exc)})
-        update_job_record(engine, job.job_id, status="error", error=str(exc))
+        job.error = message
+        job.push({"status": JobStatus.error, "step": "error", "pct": 0, "error": message})
+        update_job_record(engine, job.job_id, status="error", error=message)
     finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+        if tmp_path:
+            await asyncio.to_thread(_remove_quietly, tmp_path)
+
+
+def _remove_quietly(path: str) -> None:
+    with contextlib.suppress(FileNotFoundError):
+        os.unlink(path)
+
+
+def _client_safe_error(exc: Exception) -> str:
+    """What the client is told a failure was.
+
+    ``str(exc)`` on an OSError carries the server's temp and keystore paths,
+    and that string is served verbatim by ``GET /jobs/{id}``. The full
+    exception is already in the log with its traceback.
+    """
+    if isinstance(exc, ValueError):
+        # Raised deliberately by the packer for bad input — safe and useful.
+        return str(exc)
+    return f"{type(exc).__name__} while packing; see the server log for details"

@@ -5,8 +5,8 @@ This is the layer that owns ZIP I/O. The byte-level AXML work it delegates to
 """
 
 import io
-import re
 import zipfile
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from fuin.apk.zip_tools import copy_zip_entries
@@ -29,35 +29,45 @@ from fuin.contract import (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class InjectedAssets:
+    """Everything the packer hands to the stub, beyond the encrypted DEX.
+
+    Each field is optional because each protection layer is optional. Grouping
+    them keeps :func:`inject_encrypted_dex` from taking fourteen positional
+    arguments whose order only the packer knew.
+    """
+
+    stub_dex: bytes
+    encrypted_extra_dex: bytes | None = None
+    cert_fingerprint: bytes | None = None
+    security_policy: bytes | None = None
+    string_key: bytes | None = None
+
+    encrypted_libs: dict[str, bytes] = field(default_factory=dict)
+    native_lib_manifest: bytes | None = None
+
+    encrypted_resources: dict[str, bytes] = field(default_factory=dict)
+    res_map: bytes | None = None
+
+    # Original entry names that are now shipped encrypted and must be dropped.
+    strip_names: frozenset[str] = frozenset()
+
+
 def inject_encrypted_dex(
     apk_path: str,
     encrypted_dex: bytes,
     key: bytes,
     original_app_class: str,
     output_path: str,
-    stub_dex: bytes | None = None,
-    encrypted_extra_dex: bytes | None = None,
-    cert_fingerprint: bytes | None = None,
-    security_policy: bytes | None = None,
-    encrypted_libs: dict[str, bytes] | None = None,
-    native_lib_manifest: bytes | None = None,
-    encrypted_resources: dict[str, bytes] | None = None,
-    res_map: bytes | None = None,
-    strip_patterns: list[str] | None = None,
-    string_key: bytes | None = None,
+    assets: InjectedAssets,
 ) -> None:
-    """Repack the APK: replace classes.dex with stub_dex, embed all fuin assets."""
-    if stub_dex is None:
-        from fuin.apk.stub_dex import get_stub_dex
-
-        stub_dex = get_stub_dex()
-
-    strip_res = [re.compile(p) for p in (strip_patterns or [])]
+    """Repack the APK: replace classes.dex with the stub, embed all fuin assets."""
 
     def _replaced(name: str) -> bool:
         # DEX files are superseded by the stub; stripped entries have been
         # encrypted into assets and must not also ship in the clear.
-        return bool(DEX_NAME_RE.match(name)) or any(p.match(name) for p in strip_res)
+        return name in assets.strip_names or bool(DEX_NAME_RE.match(name))
 
     buf = io.BytesIO()
     with (
@@ -66,28 +76,28 @@ def inject_encrypted_dex(
     ):
         copy_zip_entries(zin, zout, skip=_replaced)
 
-        zout.writestr(PRIMARY_DEX, stub_dex)
+        zout.writestr(PRIMARY_DEX, assets.stub_dex)
         zout.writestr(ENCRYPTED_DEX_ASSET, encrypted_dex)
         zout.writestr(KEY_ASSET, key)
         zout.writestr(ORIGINAL_APP_META_ASSET, original_app_class.encode())
-        if encrypted_extra_dex is not None:
-            zout.writestr(ENCRYPTED_EXTRA_DEX_ASSET, encrypted_extra_dex)
-        if cert_fingerprint is not None:
-            zout.writestr(CERT_FINGERPRINT_ASSET, cert_fingerprint)
-        if security_policy is not None:
-            zout.writestr(SECURITY_POLICY_ASSET, security_policy)
-        if native_lib_manifest is not None:
-            zout.writestr(NATIVE_LIB_MANIFEST_ASSET, native_lib_manifest)
-        if encrypted_libs:
-            for name, data in encrypted_libs.items():
-                zout.writestr(f"{ENCRYPTED_LIBS_PREFIX}{name}", data)
-        if res_map is not None:
-            zout.writestr(RES_MAP_ASSET, res_map)
-        if encrypted_resources:
-            for name, data in encrypted_resources.items():
-                zout.writestr(f"{ENCRYPTED_RES_PREFIX}{name}", data)
-        if string_key:
-            zout.writestr(STRING_KEY_ASSET, string_key)
+
+        for asset_name, blob in (
+            (ENCRYPTED_EXTRA_DEX_ASSET, assets.encrypted_extra_dex),
+            (CERT_FINGERPRINT_ASSET, assets.cert_fingerprint),
+            (SECURITY_POLICY_ASSET, assets.security_policy),
+            (NATIVE_LIB_MANIFEST_ASSET, assets.native_lib_manifest),
+            (RES_MAP_ASSET, assets.res_map),
+            (STRING_KEY_ASSET, assets.string_key),
+        ):
+            if blob is not None:
+                zout.writestr(asset_name, blob)
+
+        for prefix, blobs in (
+            (ENCRYPTED_LIBS_PREFIX, assets.encrypted_libs),
+            (ENCRYPTED_RES_PREFIX, assets.encrypted_resources),
+        ):
+            for name, data in blobs.items():
+                zout.writestr(f"{prefix}{name}", data)
 
     Path(output_path).write_bytes(buf.getvalue())
 
