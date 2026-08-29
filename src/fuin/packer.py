@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 
 from fuin import config
 from fuin.apk import (
+    InjectedAssets,
     get_stub_dex,
     inject_encrypted_dex,
     keystore,
@@ -90,6 +91,30 @@ def _resolve(explicit: bool | None, fallback: bool) -> bool:
     return fallback if explicit is None else explicit
 
 
+def _keystore_was_configured(options: PackOptions, settings: config.Settings) -> bool:
+    """Whether the caller supplied a keystore, rather than getting the debug one."""
+    return bool(options.keystore_path or settings.keystore_path)
+
+
+def _cert_fingerprint(ks: keystore.Keystore, *, configured: bool) -> bytes | None:
+    """Digest of the signing certificate, for the stub's anti-repackaging check.
+
+    A failure here silently disables that check, so it is only tolerated for
+    the throwaway debug keystore. If the user pointed fuin at a real keystore
+    and it cannot be read, that is a wrong password or a wrong path — failing
+    the pack is better than shipping unprotected.
+    """
+    try:
+        return keystore.extract_cert_fingerprint(ks.path, ks.store_pass)
+    except (ValueError, OSError) as exc:
+        if configured:
+            raise ValueError(
+                f"could not read the signing certificate from {ks.path}: {exc}"
+            ) from exc
+        log.warning("could not extract cert fingerprint: %s", exc)
+        return None
+
+
 def _build_security_policy(options: PackOptions, settings: config.Settings) -> bytes | None:
     root = _resolve(options.root_detection, settings.root_detection)
     emu = _resolve(options.emulator_detection, settings.emulator_detection)
@@ -158,45 +183,34 @@ def pack_apk(
 
         _progress("injecting", 60)
 
-        cert_fp = None
-        try:
-            cert_fp = keystore.extract_cert_fingerprint(ks.path, ks.store_pass)
-        except Exception as e:
-            log.warning("could not extract cert fingerprint: %s", e)
-
+        cert_fp = _cert_fingerprint(ks, configured=_keystore_was_configured(options, settings))
         security_policy = _build_security_policy(options, settings)
 
         exclude = set(options.exclude_files)
-        native_result = (
+        native = (
             encrypt_native_libs(step1, key, exclude_files=exclude)
             if options.encrypt_native
             else None
         )
-        res_result = (
+        resources = (
             encrypt_resources(step1, key, exclude_files=exclude) if options.encrypt_assets else None
         )
 
-        strip = (native_result.get("strip_patterns", []) if native_result else []) + (
-            res_result.get("strip_patterns", []) if res_result else []
-        )
-
-        inject_encrypted_dex(
-            step1,
-            encrypted,
-            key,
-            found_class or "",
-            step2,
+        assets = InjectedAssets(
             stub_dex=stub_dex,
             encrypted_extra_dex=encrypted_extra,
             cert_fingerprint=cert_fp,
             security_policy=security_policy,
-            encrypted_libs=native_result.get("encrypted_libs") if native_result else None,
-            native_lib_manifest=native_result.get("manifest") if native_result else None,
-            encrypted_resources=res_result.get("encrypted_resources") if res_result else None,
-            res_map=res_result.get("res_map") if res_result else None,
-            strip_patterns=strip or None,
             string_key=string_key,
+            encrypted_libs=native.blobs if native else {},
+            native_lib_manifest=native.index if native else None,
+            encrypted_resources=resources.blobs if resources else {},
+            res_map=resources.index if resources else None,
+            strip_names=(native.strip_names if native else frozenset())
+            | (resources.strip_names if resources else frozenset()),
         )
+
+        inject_encrypted_dex(step1, encrypted, key, found_class or "", step2, assets)
 
         _progress("aligning", 75)
         zipalign(step2, step3)

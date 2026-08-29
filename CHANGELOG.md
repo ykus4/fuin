@@ -5,6 +5,115 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Correctness release. Several protections were not doing anything, and nothing
+in the suite noticed because the assertions checked shape rather than outcome.
+No configuration changes are required.
+
+### Fixed
+
+- **The pure-Python `zipalign` never worked.** Its local-file-header format
+  string unpacked 11 fields into 10 names, so it raised `ValueError` on the
+  first entry of every input. Nobody hit it because the tests ran the Android
+  SDK binary whenever one was on `PATH` — which is the case on developer
+  machines and on GitHub runners, but not for `pip install fuin` without the
+  SDK, the setup the docs advertise. Two further bugs sat behind it: the
+  padding calculation ignored any existing extra field, and the central
+  directory was copied verbatim, leaving every entry offset stale once padding
+  shifted the entries. The aligner is rewritten against the central directory
+  and now rejects ZIP64 archives and already-signed APKs instead of silently
+  corrupting them.
+- **The pure-Python v2 signature was never valid.** The APK Signing Block size
+  fields were 8 bytes too large, so `apksigner` could not find the block at all
+  and reported the APK as v2-unsigned; behind that, the signers sequence was
+  missing its outer length prefix, the certificate sequence carried one prefix
+  too many, the additional-attributes sequence declared a zero-length
+  attribute, the content digest was computed per section instead of over one
+  flat chunk list, and the EOCD was digested with its central-directory offset
+  zeroed rather than left pointing at the signing block. Output now verifies
+  with `apksigner verify`, which the suite asserts.
+- **v1 signing destroyed the alignment `zipalign` had just applied**, because it
+  rebuilds the archive through `zipfile`. The fallback path re-aligns between
+  v1 and v2.
+- **`X-Android-APK-Signed: 2`** is now written into the `.SF`, so a stripped v2
+  block cannot silently downgrade verification to v1.
+- **`exclude_files` deleted the native libraries it excluded.** The encryptor
+  returned a blanket `^lib/.*\.so$` strip pattern regardless of what it had
+  actually encrypted, so an excluded `.so` was neither encrypted nor shipped.
+- **The resource-map chunk type was wrong** (`0x00180002`, against Android's
+  `0x00080180`), so fuin parsed zero resource IDs and reported `min_sdk`,
+  `target_sdk`, `version_code`, `version_name` and permissions as empty for
+  every real APK. The test fixture emitted the same wrong value and so agreed
+  with the bug.
+- **A malformed manifest could exhaust memory.** `string_count` is an
+  attacker-controlled `u32` and was used directly as a loop bound, so a
+  few-hundred-byte upload could claim `0xFFFFFFFF` strings. It is now bounded by
+  the buffer. Reachable from `POST /pack`.
+- **`patch_axml` raised on truncated input** while formatting the warning that
+  the input was truncated.
+- **The fallback manifest patcher could ship a corrupt manifest.** When the
+  replacement class name differed in length it did a raw byte `replace`, which
+  shifts every AXML offset, and still reported success — so `strict_manifest_patch`
+  passed. It now declines and reports failure.
+- **Duplicate ZIP entries were silently collapsed** onto the last copy, because
+  entries were read by name rather than through their `ZipInfo`. Signing now
+  rejects duplicate names outright.
+- **A genuine `apksigner` failure was mistaken for a missing JRE** — the check
+  searched stderr for `"java"`, which matches every Java stack trace — and
+  quietly fell through to the fallback signer.
+- **A failure to read the signing certificate disabled anti-tamper silently.**
+  It is now only tolerated for the generated debug keystore.
+- **The pack report said "Encrypted DEX files: 0"** for single-DEX apps: it
+  derived the count from removed entries, and `classes.dex` comes back as the
+  stub.
+- `axml/` no longer opens ZIP files, restoring the `packer` → `apk` → `axml`
+  layering the docs describe. `get_apk_info` moves to `fuin.apk.info` and its
+  error path returns the same keys as its success path.
+- Encrypted asset names use the full SHA-256 digest instead of a 64-bit prefix,
+  which was cheap to collide and silently dropped one of the colliding assets.
+
+### Security
+
+- **Webhook URLs are validated.** The per-request `webhook_url` was POSTed to
+  unchecked, so any authenticated caller could reach cloud instance metadata or
+  internal hosts. Targets must now be `https` (`FUIN_WEBHOOK_ALLOW_HTTP` opts
+  into plain http) and resolve entirely to public addresses.
+- **Upload limits are enforced while reading.** `POST /analyze` had no limit at
+  all and `POST /pack` checked only after the whole body was in memory.
+- **The API key is compared with `secrets.compare_digest`** rather than `==`.
+- **Job errors no longer return raw exception text**, which carried server temp
+  and keystore paths.
+- **The container runs as a non-root user** and applies migrations before
+  serving.
+- External build tools run with a timeout, so a wedged `apksigner` cannot pin a
+  worker forever.
+
+### Added
+
+- `GET /health` — unauthenticated liveness probe, plus a Docker `HEALTHCHECK`.
+- 16 KiB page alignment for uncompressed `lib/**/*.so`, for Android 15 devices.
+  Opt in via `zipalign(..., so_alignment=PAGE_ALIGNMENT)`.
+- Jobs left `running` by a restart are marked failed at startup instead of
+  being reported as in progress forever.
+- SQLite connections enable WAL, a busy timeout and foreign keys;
+  `FUIN_DATABASE_URL` now works for non-SQLite backends.
+- An SSE subscriber that connects after a job finished receives the terminal
+  state instead of blocking forever, and progress events are marshalled onto
+  the event loop rather than pushed onto an `asyncio.Queue` from a worker
+  thread.
+
+### Changed
+
+- `inject_encrypted_dex` takes an `InjectedAssets` dataclass instead of
+  fourteen keyword arguments.
+- `encrypt_native_libs` / `encrypt_resources` return `EncryptedEntries` instead
+  of an untyped `dict`, and share one entry reader.
+- Entry selection (`is_native_lib`, `is_user_asset`) lives in `fuin.contract`,
+  so `analyze` and `pack` cannot disagree about what gets encrypted.
+- New `fuin.apk.zip_format` module holds byte-level ZIP record parsing, shared
+  by signing and alignment.
+
 ## [2.0.0] - 2026-08-01
 
 A large release. The Python package is reorganised, the web service moves behind

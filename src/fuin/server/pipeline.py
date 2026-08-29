@@ -13,7 +13,7 @@ import os
 import uuid
 from collections.abc import Callable
 
-from fuin.axml import get_apk_info
+from fuin.apk import get_apk_info
 from fuin.contract import PRIMARY_DEX
 from fuin.packer import PackOptions, PackResult, pack_apk
 from fuin.reporting import analyze_targets as _analyze_targets

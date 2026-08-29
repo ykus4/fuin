@@ -7,6 +7,8 @@ structured report showing size changes, encryption targets, and metadata.
 import zipfile
 from pathlib import Path
 
+from fuin.contract import DEX_NAME_RE, ENCRYPTED_DEX_ASSET, ENCRYPTED_EXTRA_DEX_ASSET
+
 
 def fmt_size(size: int) -> str:
     """Human-readable byte count."""
@@ -32,7 +34,11 @@ def generate_report(original_path: str, packed_path: str) -> dict:
     added = sorted(packed_names - orig_names)
     removed = sorted(orig_names - packed_names)
 
-    encrypted_dex = [f for f in removed if f.endswith(".dex")]
+    # Every DEX in the original is encrypted into assets. Deriving this from
+    # `removed` reported 0 for single-DEX apps, because classes.dex comes back
+    # as the stub and so never shows up as removed.
+    encrypted_dex = sorted(f for f in orig_names if DEX_NAME_RE.match(f))
+    dex_assets_present = {ENCRYPTED_DEX_ASSET, ENCRYPTED_EXTRA_DEX_ASSET} & packed_names
     fuin_assets = [f for f in added if f.startswith("assets/")]
 
     orig_signatures = [f for f in orig_names if f.startswith("META-INF/")]
@@ -53,7 +59,11 @@ def generate_report(original_path: str, packed_path: str) -> dict:
             "added": len(added),
             "removed": len(removed),
         },
-        "encrypted_targets": {"dex_files": encrypted_dex, "count": len(encrypted_dex)},
+        "encrypted_targets": {
+            "dex_files": encrypted_dex,
+            "count": len(encrypted_dex),
+            "dex_assets": sorted(dex_assets_present),
+        },
         "injected_assets": fuin_assets,
         "entry_changes": {"added": added, "removed": removed},
         "signature": {"original": sorted(orig_signatures), "packed": sorted(packed_signatures)},

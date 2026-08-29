@@ -96,3 +96,19 @@ class JobRepository:
         for record in old:
             self.session.delete(record)
         return len(old)
+
+    def fail_unfinished(self, reason: str) -> int:
+        """Mark every still-running job as failed. Returns the row count.
+
+        The in-memory job store does not survive a restart, so rows left at
+        "running" describe work nothing is doing — and ``GET /jobs/{id}``
+        reports them as in progress forever.
+        """
+        stranded = (
+            self.session.query(JobRecord).filter(JobRecord.status.in_(("pending", "running"))).all()
+        )
+        for record in stranded:
+            record.status = "error"
+            record.error = reason
+            record.finished_at = datetime.now(UTC)
+        return len(stranded)

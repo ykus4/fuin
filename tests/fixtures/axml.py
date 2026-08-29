@@ -12,10 +12,29 @@ def _encode_utf16(s: str) -> bytes:
     return struct.pack("<H", len(s)) + encoded + b"\x00\x00"
 
 
-def make_axml(app_class: str = "com.example.MyApp") -> bytes:
+# Resource IDs, hardcoded rather than imported: this builder stays independent
+# of fuin.axml so it can catch fuin.axml being wrong.
+_RES_NAME = 0x01010003
+_RES_MIN_SDK = 0x0101020C
+_RES_TARGET_SDK = 0x01010270
+
+_TYPE_STRING = 0x03
+_TYPE_INT_DEC = 0x10
+
+
+def make_axml(
+    app_class: str = "com.example.MyApp",
+    *,
+    min_sdk: int | None = None,
+    target_sdk: int | None = None,
+) -> bytes:
     """
     Build a minimal valid binary AXML AndroidManifest with a single
     <application android:name="app_class"> element.
+
+    Pass ``min_sdk``/``target_sdk`` to add a ``<uses-sdk>`` element. Those
+    attributes are only addressable through the resource map, so this is what
+    exercises resource-ID lookup at all.
     """
     ANDROID_NS = "http://schemas.android.com/apk/res/android"
 
@@ -29,6 +48,13 @@ def make_axml(app_class: str = "com.example.MyApp") -> bytes:
         "manifest",  # 6
         "com.example.test",  # 7
     ]
+    # Parallel to the strings, by index.
+    res_ids = [0, 0, 0, 0, _RES_NAME, 0, 0, 0]
+
+    wants_uses_sdk = min_sdk is not None or target_sdk is not None
+    if wants_uses_sdk:
+        strings += ["uses-sdk", "minSdkVersion", "targetSdkVersion"]  # 8, 9, 10
+        res_ids += [0, _RES_MIN_SDK, _RES_TARGET_SDK]
 
     # Build string pool
     string_blobs = [_encode_utf16(s) for s in strings]
@@ -60,8 +86,13 @@ def make_axml(app_class: str = "com.example.MyApp") -> bytes:
     )
     sp_chunk = sp_header + offsets_blob + strings_data
 
-    # Resource map chunk (empty)
-    res_map = struct.pack("<II", 0x00180002, 8)
+    # Resource map chunk. The type word is u16 type + u16 header size:
+    # RES_XML_RESOURCE_MAP_TYPE (0x0180) with an 8-byte header. Declaring a
+    # header larger than the chunk makes real AXML parsers — apksigner's
+    # included — reject the whole manifest.
+    res_map = struct.pack("<II", 0x00080180, 8 + len(res_ids) * 4) + struct.pack(
+        f"<{len(res_ids)}I", *res_ids
+    )
 
     # <manifest> start element
     def start_elem(ns_idx, name_idx, attrs):
@@ -93,7 +124,7 @@ def make_axml(app_class: str = "com.example.MyApp") -> bytes:
         0xFFFFFFFF,
         6,
         [
-            (0xFFFFFFFF, 2, 7, 0x03, 7),  # package attr, TYPE_STRING, value=pool[7]
+            (0xFFFFFFFF, 2, 7, _TYPE_STRING, 7),  # package attr, value=pool[7]
         ],
     )
     # <application android:name="com.example.MyApp">
@@ -102,13 +133,22 @@ def make_axml(app_class: str = "com.example.MyApp") -> bytes:
         0,
         3,
         [
-            (0, 4, 5, 0x03, 5),  # android:name, TYPE_STRING, value=pool[5]
+            (0, 4, 5, _TYPE_STRING, 5),  # android:name, value=pool[5]
         ],
     )
     app_end = end_elem(0, 3)
     manifest_end = end_elem(0xFFFFFFFF, 6)
 
-    body = sp_chunk + res_map + manifest_start + app_start + app_end + manifest_end
+    uses_sdk = b""
+    if wants_uses_sdk:
+        sdk_attrs = []
+        if min_sdk is not None:
+            sdk_attrs.append((0, 9, 0xFFFFFFFF, _TYPE_INT_DEC, min_sdk))
+        if target_sdk is not None:
+            sdk_attrs.append((0, 10, 0xFFFFFFFF, _TYPE_INT_DEC, target_sdk))
+        uses_sdk = start_elem(0, 8, sdk_attrs) + end_elem(0, 8)
+
+    body = sp_chunk + res_map + manifest_start + uses_sdk + app_start + app_end + manifest_end
 
     # File header
     file_size = 8 + len(body)

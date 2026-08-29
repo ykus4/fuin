@@ -17,6 +17,10 @@ def copy_zip_entries(
     Entries named in ``replace`` are written with the supplied contents instead
     of the original, keeping their position in the archive. Entry metadata is
     preserved by passing the original ``ZipInfo`` through.
+
+    Members are read through their ``ZipInfo``, not their name: an archive may
+    legitimately hold two entries with the same name, and ``ZipFile.read(name)``
+    resolves every one of them to the last.
     """
     for item in zin.infolist():
         if skip is not None and skip(item.filename):
@@ -24,7 +28,8 @@ def copy_zip_entries(
         if replace is not None and item.filename in replace:
             zout.writestr(item, replace[item.filename])
         else:
-            zout.writestr(item, zin.read(item.filename))
+            with zin.open(item) as src:
+                zout.writestr(item, src.read())
 
 
 def sha256_file(path: str) -> str:

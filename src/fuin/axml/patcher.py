@@ -7,13 +7,14 @@ It handles the common production case reliably without external dependencies.
 AXML format (chunk-based):
   0x00080003  — XML document header
   0x001C0001  — String pool chunk
-  0x00180002  — Resource map chunk
+  0x00080180  — Resource map chunk
   0x00100102  — Start element
   0x00100103  — End element
   ...
 """
 
 import logging
+import re
 import struct
 
 from fuin.axml.constants import ANDROID_NS, AXML_FILE_MAGIC, CHUNK_STRING_POOL, TYPE_STRING
@@ -21,8 +22,8 @@ from fuin.axml.reader import (
     StringPool,
     encode_pool_string_utf16,
     iter_start_elements,
+    raw_pool_entry,
     read_string_pool,
-    read_u16,
     read_u32,
 )
 from fuin.contract import STUB_CLASS
@@ -53,9 +54,9 @@ def patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str]
     sp_offset = 8  # string pool sits right after the file header
     sp = read_string_pool(data, sp_offset)
     if sp is None:
-        log.warning(
-            "expected string pool at offset 8, got 0x%08x — fallback", read_u32(data, sp_offset)
-        )
+        # Do not read the chunk type back for the message: a truncated manifest
+        # is exactly the case that lands here, and there may be nothing to read.
+        log.warning("no usable string pool at offset %d — fallback", sp_offset)
         return _patch_fallback(data, original_app_class)
 
     sp_chunk_size = sp.chunk_size
@@ -102,21 +103,10 @@ def patch_axml(data: bytes, original_app_class: str | None) -> tuple[bytes, str]
         if i == target_idx:
             new_strings.append(encode_pool_string_utf16(STUB_CLASS))
         else:
-            # Re-encode as-is from original bytes to preserve exact byte layout for others
+            # Copied verbatim to preserve the exact byte layout of every other
+            # entry — the length decoding lives in the reader, not here.
             str_rel = read_u32(data, offsets_start + i * 4)
-            char_count = read_u16(data, strings_abs + str_rel)
-            if char_count & 0x8000:
-                # extended length
-                char_count = ((data[strings_abs + str_rel + 2] & 0x7F) << 8) | data[
-                    strings_abs + str_rel + 1
-                ]
-                raw_start = str_rel + 4
-            else:
-                raw_start = str_rel + 2
-            raw_end = raw_start + char_count * 2 + 2  # +2 for NUL terminator
-            new_strings.append(
-                data[strings_abs + str_rel : strings_abs + str_rel + (raw_end - str_rel)]
-            )
+            new_strings.append(raw_pool_entry(data, strings_abs, str_rel, is_utf8))
 
     # Compute new offsets
     new_offsets: list[int] = []
@@ -210,43 +200,55 @@ def _find_application_name_attr(
     return None, ""
 
 
+# A run of 4+ ASCII characters encoded as UTF-16LE.
+_UTF16_ASCII_RUN = re.compile(rb"(?:[a-zA-Z0-9_./$]\x00){4,}")
+
+
 def _patch_fallback(data: bytes, original_app_class: str | None) -> tuple[bytes, str]:
-    """
-    Byte-level fallback: find the class name encoded as UTF-16LE in the raw bytes and replace it.
-    Used when the structural parser cannot identify the string pool layout.
+    """Byte-level fallback for manifests the structural parser cannot lay out.
+
+    This can only ever do a *same-length* substitution. AXML string offsets are
+    absolute, so changing the byte length of any pool entry shifts every
+    following chunk and leaves a manifest Android will not parse. When the
+    replacement does not fit, the manifest is returned untouched with an empty
+    class name — which is what ``strict_manifest_patch`` checks, so the pack
+    fails loudly instead of shipping a broken APK.
     """
     stub_utf16 = STUB_CLASS.encode("utf-16-le")
 
     if original_app_class:
         target_utf16 = original_app_class.encode("utf-16-le")
         if target_utf16 in data:
-            patched = data.replace(target_utf16, stub_utf16, 1)
-            return patched, original_app_class
+            if len(target_utf16) != len(stub_utf16):
+                log.warning(
+                    "fallback patcher cannot replace %r with %s: %d bytes vs %d",
+                    original_app_class,
+                    STUB_CLASS,
+                    len(target_utf16),
+                    len(stub_utf16),
+                )
+                return data, ""
+            return data.replace(target_utf16, stub_utf16, 1), original_app_class
 
-    # Auto-detect: scan for UTF-16LE strings that look like Application class names
-    import re
-
-    best: tuple[int, int, str] | None = None
-    for m in re.finditer(rb"(?:[a-zA-Z0-9_./$]\x00){4,}", data):
+    for match in _UTF16_ASCII_RUN.finditer(data):
         try:
-            s = m.group(0).decode("utf-16-le")
+            found = match.group(0).decode("utf-16-le")
         except UnicodeDecodeError:
             continue
-        looks_like_class = "." in s and len(s) > 4 and not s.startswith("http")
-        if looks_like_class and ("Application" in s or "App" in s):
-            best = (m.start(), m.end(), s)
-            break
+        if "." not in found or len(found) <= 4 or found.startswith("http"):
+            continue
+        if "Application" not in found and "App" not in found:
+            continue
 
-    if best:
-        start, end, found = best
-        # Ensure same length replacement — pad or truncate
-        orig_bytes = found.encode("utf-16-le")
-        new_bytes = STUB_CLASS.encode("utf-16-le")
-        if len(orig_bytes) == len(new_bytes):
-            patched = data[:start] + new_bytes + data[end:]
-            return patched, found
-        # Different length: use replace (may shift offsets but best-effort)
-        patched = data.replace(orig_bytes, new_bytes, 1)
-        return patched, found
+        original = found.encode("utf-16-le")
+        if len(original) != len(stub_utf16):
+            log.warning(
+                "fallback patcher found %r but it is %d bytes, not %d — leaving the manifest alone",
+                found,
+                len(original),
+                len(stub_utf16),
+            )
+            return data, ""
+        return data[: match.start()] + stub_utf16 + data[match.end() :], found
 
     return data, ""

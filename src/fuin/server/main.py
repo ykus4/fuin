@@ -2,6 +2,7 @@
 
 Routes live in :mod:`fuin.server.routers`:
   GET    /                              — Web UI
+  GET    /health                        — Liveness probe (unauthenticated)
   POST   /analyze                       — Preview encryption targets
   POST   /pack                          — Start async pack job → job_id
   GET    /jobs/{job_id}/stream          — SSE progress stream
@@ -23,7 +24,7 @@ from fuin.server.config import validate_server_config
 from fuin.server.deps import get_engine
 from fuin.server.routers import apps, jobs, pack, ui
 from fuin.server.routers.ui import STATIC_DIR
-from fuin.server.services.cleanup_service import cleanup_old_records
+from fuin.server.services.cleanup_service import cleanup_old_records, fail_stranded_jobs
 
 log = logging.getLogger(__name__)
 
@@ -31,11 +32,28 @@ log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     validate_server_config()
-    cleanup_old_records(get_engine())
+    engine = get_engine()
+    # Order matters: reconcile before cleanup, so a job stranded by the last
+    # restart is recorded as failed rather than deleted out from under a client
+    # that is still polling it.
+    fail_stranded_jobs(engine)
+    cleanup_old_records(engine)
     yield
 
 
 app = FastAPI(title="fuin Packer Server", lifespan=lifespan)
+
+
+@app.get("/health", include_in_schema=False)
+def health() -> dict[str, str]:
+    """Unauthenticated liveness probe for containers and load balancers.
+
+    Deliberately reports nothing but reachability — it is the one route without
+    an API key, so it must not disclose configuration.
+    """
+    return {"status": "ok"}
+
+
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 app.include_router(ui.router)

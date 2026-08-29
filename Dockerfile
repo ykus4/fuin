@@ -21,7 +21,20 @@ RUN uv sync --frozen --no-dev --extra server
 ENV FUIN_PACKED_DIR=/data/packed_apks
 ENV FUIN_DATABASE_URL=sqlite:////data/fuin.db
 
+# The service parses attacker-supplied ZIP, DEX and AXML. Do not do that as
+# uid 0 with /data mounted.
+RUN useradd --system --create-home --uid 10001 fuin \
+    && mkdir -p /data \
+    && chown -R fuin:fuin /data /app
+USER fuin
+
 VOLUME ["/data"]
 EXPOSE 8000
 
-CMD ["uv", "run", "--no-sync", "fuin-server"]
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).status == 200 else 1)"]
+
+# Bring the schema up to date before serving. Without this the container
+# depended on create_all, alembic_version was never stamped, and an upgrade
+# against an existing volume could never apply a migration.
+CMD ["sh", "-c", "uv run --no-sync alembic upgrade head && exec uv run --no-sync fuin-server"]

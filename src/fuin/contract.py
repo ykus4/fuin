@@ -49,3 +49,32 @@ FUIN_INTERNAL_ASSETS: frozenset[str] = frozenset(
 
 # The class the manifest's android:name is rewritten to point at.
 STUB_CLASS = "com.fuin.stub.StubApplication"
+
+
+# ---------------------------------------------------------------------------
+# Entry selection
+#
+# "Which entries does fuin encrypt" used to be written once per consumer — in
+# the two encryptors and again in the analyzer — and the copies had already
+# drifted, so `analyze` reported coverage `pack` did not deliver. Both now ask
+# these.
+# ---------------------------------------------------------------------------
+
+
+def is_directory_entry(name: str) -> bool:
+    """ZIP directory markers carry no data and must never be 'encrypted'."""
+    return name.endswith("/")
+
+
+def is_native_lib(name: str) -> bool:
+    """A native library the loader would otherwise find in the clear."""
+    return name.startswith("lib/") and name.endswith(".so") and not is_directory_entry(name)
+
+
+def is_user_asset(name: str) -> bool:
+    """An ``assets/`` entry that belongs to the app rather than to fuin."""
+    if not name.startswith("assets/") or is_directory_entry(name):
+        return False
+    if name in FUIN_INTERNAL_ASSETS:
+        return False
+    return not name.startswith((ENCRYPTED_LIBS_PREFIX, ENCRYPTED_RES_PREFIX))

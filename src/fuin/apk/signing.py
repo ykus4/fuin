@@ -3,25 +3,46 @@
 `sign_apk()` is the public entry point. It tries the apksigner binary first
 (for v2/v3 signing) and falls back to pure-Python v1 + v2 signing when the
 SDK / Java are unavailable.
+
+The v2 layout follows
+https://source.android.com/docs/security/features/apksigning/v2 — every length
+prefix there is a u32, and sequences are length-prefixed *and* contain
+length-prefixed items. :func:`_lp` and :func:`_seq` exist so that shape is
+written once rather than open-coded per field.
 """
 
 import base64
 import hashlib
 import io
+import logging
 import struct
+import subprocess
 import zipfile
 from pathlib import Path
 
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives.serialization import pkcs7
 
-from fuin.apk.constants import APK_SIG_BLOCK_MAGIC, APK_V2_BLOCK_ID, ZIP_EOCD_MAGIC
+from fuin.apk.constants import APK_SIG_BLOCK_MAGIC, APK_V2_BLOCK_ID
 from fuin.apk.keystore import load_key_and_cert
 from fuin.apk.tools import find_build_tool, run_tool
+from fuin.apk.zip_format import find_eocd
 from fuin.apk.zip_tools import copy_zip_entries
+from fuin.apk.zipalign import DEFAULT_ALIGNMENT, zipalign_file
+
+log = logging.getLogger(__name__)
 
 _V2_ALG_RSASSA_PKCS1_SHA256 = 0x0103
+
+# v2 digests the APK in 1 MB chunks, each prefixed with 0xa5.
+_V2_CHUNK_SIZE = 1 << 20
+_V2_CHUNK_PREFIX = b"\xa5"
+_V2_TOP_LEVEL_PREFIX = b"\x5a"
+
+# Tells Android 7.0+ that a v2 signature is expected, so an attacker cannot
+# strip the v2 block and have the APK accepted on its v1 signature alone.
+_SF_V2_ATTRIBUTE = "X-Android-APK-Signed: 2\r\n"
 
 
 def _is_meta_inf(name: str) -> bool:
@@ -29,8 +50,22 @@ def _is_meta_inf(name: str) -> bool:
     return name.startswith("META-INF/")
 
 
-def sign_apk(apk_path: str, keystore: str, key_alias: str, store_pass: str, key_pass: str) -> None:
-    """Sign an APK with v1 + v2 signatures."""
+def sign_apk(
+    apk_path: str,
+    keystore: str,
+    key_alias: str,
+    store_pass: str,
+    key_pass: str,
+    *,
+    alignment: int = DEFAULT_ALIGNMENT,
+    so_alignment: int | None = None,
+) -> None:
+    """Sign an APK with v1 + v2 signatures.
+
+    The alignment arguments are only used by the pure-Python path: v1 signing
+    rebuilds the archive, which drops the padding :func:`zipalign` inserted, so
+    the entries have to be re-aligned before the v2 digest is taken over them.
+    """
     bin_path = find_build_tool("apksigner")
     if bin_path:
         # check=False: a missing JRE is not fatal — we fall back to the
@@ -53,11 +88,28 @@ def sign_apk(apk_path: str, keystore: str, key_alias: str, store_pass: str, key_
         )
         if result.returncode == 0:
             return
-        if "Java Runtime" not in result.stderr and "java" not in result.stderr.lower():
+        if not _looks_like_missing_java(result):
             raise RuntimeError(f"apksigner failed:\n{result.stderr}")
+        log.info("apksigner could not run (no JRE); using the built-in signer")
 
     _sign_v1(apk_path, keystore, key_alias, store_pass)
+    zipalign_file(apk_path, alignment=alignment, so_alignment=so_alignment)
     _sign_v2(apk_path, keystore, store_pass)
+
+
+def _looks_like_missing_java(result: subprocess.CompletedProcess[str]) -> bool:
+    """Whether an apksigner failure was "no Java" rather than "bad input".
+
+    apksigner is a shell wrapper around a JAR, so a missing JRE surfaces as a
+    message from the wrapper rather than a distinct exit code. Matching on
+    phrases the wrapper emits keeps a genuine signing error that merely
+    mentions Java from being silently downgraded to the fallback signer.
+    """
+    lowered = (result.stderr or "").lower()
+    return any(
+        phrase in lowered
+        for phrase in ("java runtime", "java_home", "java: command not found", "no such file")
+    )
 
 
 def verify_apk_signature(apk_path: str) -> bool:
@@ -82,11 +134,7 @@ def _sign_v1(apk_path: str, keystore_path: str, alias: str, password: str) -> No
     private_key, cert = load_key_and_cert(keystore_path, password)
 
     with zipfile.ZipFile(apk_path, "r") as zin:
-        entries = {
-            info.filename: zin.read(info.filename)
-            for info in zin.infolist()
-            if not _is_meta_inf(info.filename)
-        }
+        entries = _read_signable_entries(zin)
 
     def _b64(d: bytes) -> str:
         return base64.b64encode(d).decode()
@@ -94,19 +142,21 @@ def _sign_v1(apk_path: str, keystore_path: str, alias: str, password: str) -> No
     def _sha256(d: bytes) -> str:
         return _b64(hashlib.sha256(d).digest())
 
-    mf_lines = ["Manifest-Version: 1.0\r\n\r\n"]
-    for name, data in sorted(entries.items()):
-        mf_lines.append(f"Name: {name}\r\nSHA-256-Digest: {_sha256(data)}\r\n\r\n")
-    manifest = "".join(mf_lines).encode()
+    # Each entry's manifest stanza is digested again for the .SF, so build the
+    # stanza once and reuse it rather than re-hashing the entry bytes.
+    stanzas = {
+        name: f"Name: {name}\r\nSHA-256-Digest: {_sha256(data)}\r\n\r\n" for name, data in entries
+    }
 
-    mf_digest = _sha256(manifest)
+    manifest = ("Manifest-Version: 1.0\r\n\r\n" + "".join(stanzas.values())).encode()
+
     sf_lines = [
         "Signature-Version: 1.0\r\n",
-        f"SHA-256-Digest-Manifest: {mf_digest}\r\n\r\n",
+        _SF_V2_ATTRIBUTE,
+        f"SHA-256-Digest-Manifest: {_sha256(manifest)}\r\n\r\n",
     ]
-    for name, data in sorted(entries.items()):
-        entry_text = f"Name: {name}\r\nSHA-256-Digest: {_sha256(data)}\r\n\r\n"
-        sf_lines.append(f"Name: {name}\r\nSHA-256-Digest: {_sha256(entry_text.encode())}\r\n\r\n")
+    for name, stanza in stanzas.items():
+        sf_lines.append(f"Name: {name}\r\nSHA-256-Digest: {_sha256(stanza.encode())}\r\n\r\n")
     sf_bytes = "".join(sf_lines).encode()
 
     sig_bytes = (
@@ -130,101 +180,107 @@ def _sign_v1(apk_path: str, keystore_path: str, alias: str, password: str) -> No
     Path(apk_path).write_bytes(buf.getvalue())
 
 
+def _read_signable_entries(zin: zipfile.ZipFile) -> list[tuple[str, bytes]]:
+    """Every non-signature entry, read per physical member.
+
+    Reading by name would silently collapse duplicate entries onto the last
+    one, which is exactly the shape a masquerading APK uses — so duplicates are
+    rejected rather than normalised away.
+    """
+    entries: list[tuple[str, bytes]] = []
+    seen: set[str] = set()
+    for info in zin.infolist():
+        if _is_meta_inf(info.filename):
+            continue
+        if info.filename in seen:
+            raise ValueError(f"APK contains duplicate entry {info.filename!r}; refusing to sign")
+        seen.add(info.filename)
+        with zin.open(info) as src:
+            entries.append((info.filename, src.read()))
+    entries.sort(key=lambda item: item[0])
+    return entries
+
+
 # ---------------------------------------------------------------------------
 # v2 signing
 # https://source.android.com/docs/security/features/apksigning/v2
 # ---------------------------------------------------------------------------
 
 
+def _lp(data: bytes) -> bytes:
+    """A u32-length-prefixed blob."""
+    return struct.pack("<I", len(data)) + data
+
+
+def _seq(items: list[bytes]) -> bytes:
+    """A length-prefixed sequence of length-prefixed items."""
+    return _lp(b"".join(_lp(item) for item in items))
+
+
 def _sign_v2(apk_path: str, keystore_path: str, password: str) -> None:
     private_key, cert = load_key_and_cert(keystore_path, password)
+    if not isinstance(private_key, rsa.RSAPrivateKey):
+        raise ValueError(
+            "the built-in v2 signer only supports RSA keys; "
+            f"{keystore_path} holds a {type(private_key).__name__}"
+        )
 
-    apk_data = bytearray(Path(apk_path).read_bytes())
+    apk_data = Path(apk_path).read_bytes()
+    eocd = find_eocd(apk_data)
 
-    eocd_offset = _find_eocd(apk_data)
-    if eocd_offset is None:
-        raise RuntimeError("Cannot find EOCD in APK — not a valid ZIP")
+    contents = apk_data[: eocd.cd_offset]
+    central_directory = apk_data[eocd.cd_offset : eocd.cd_offset + eocd.cd_size]
+    # The EOCD is digested with its central-directory-offset field pointing at
+    # the signing block. The block is inserted exactly where the central
+    # directory starts today, so the field already holds the right value.
+    end_of_central_directory = apk_data[eocd.offset :]
 
-    cd_offset = struct.unpack_from("<I", apk_data, eocd_offset + 16)[0]
-    cd_size = struct.unpack_from("<I", apk_data, eocd_offset + 12)[0]
-
-    section1 = bytes(apk_data[:cd_offset])
-    section2 = bytes(apk_data[cd_offset : cd_offset + cd_size])
-    eocd_for_sig = bytearray(apk_data[eocd_offset:])
-    struct.pack_into("<I", eocd_for_sig, 16, 0)
-    section3 = bytes(eocd_for_sig)
-
-    top = b"\x5a" + struct.pack("<I", 3)
-    top += _digest_section(section1) + _digest_section(section2) + _digest_section(section3)
-    content_digest = hashlib.sha256(top).digest()
-
-    digest_entry = (
-        struct.pack("<II", _V2_ALG_RSASSA_PKCS1_SHA256, len(content_digest)) + content_digest
-    )
-    digests_blob = struct.pack("<I", len(digest_entry)) + digest_entry
+    content_digest = _content_digest(contents, central_directory, end_of_central_directory)
 
     cert_der = cert.public_bytes(serialization.Encoding.DER)
-    certs_blob = struct.pack("<II", len(cert_der), len(cert_der)) + cert_der
-    attrs_blob = struct.pack("<I", 0)
-
     signed_data = (
-        struct.pack("<I", len(digests_blob))
-        + digests_blob
-        + struct.pack("<I", len(certs_blob))
-        + certs_blob
-        + struct.pack("<I", len(attrs_blob))
-        + attrs_blob
+        _seq([struct.pack("<I", _V2_ALG_RSASSA_PKCS1_SHA256) + _lp(content_digest)])
+        + _seq([cert_der])
+        + _lp(b"")  # no additional attributes
     )
 
-    sig_bytes = private_key.sign(signed_data, padding.PKCS1v15(), hashes.SHA256())
-    sig_entry = struct.pack("<II", _V2_ALG_RSASSA_PKCS1_SHA256, len(sig_bytes)) + sig_bytes
-    sigs_blob = struct.pack("<II", len(sig_entry), len(sig_entry)) + sig_entry
-
-    pub_key_der = cert.public_key().public_bytes(
+    signature = private_key.sign(signed_data, padding.PKCS1v15(), hashes.SHA256())
+    public_key_der = cert.public_key().public_bytes(
         serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
     )
-
     signer = (
-        struct.pack("<I", len(signed_data))
-        + signed_data
-        + struct.pack("<I", len(sigs_blob))
-        + sigs_blob
-        + struct.pack("<I", len(pub_key_der))
-        + pub_key_der
+        _lp(signed_data)
+        + _seq([struct.pack("<I", _V2_ALG_RSASSA_PKCS1_SHA256) + _lp(signature)])
+        + _lp(public_key_der)
     )
-    signers_blob = struct.pack("<I", len(signer)) + signer
 
-    pair = struct.pack("<QI", len(signers_blob) + 4, APK_V2_BLOCK_ID) + signers_blob
-
-    # size_before(8) + pairs + size_after(8) + magic(16)
-    block_size = 8 + len(pair) + 8 + 16
+    signers = _seq([signer])
+    pair = struct.pack("<QI", len(signers) + 4, APK_V2_BLOCK_ID) + signers
+    # Both size fields count every byte after the first one — the pairs, the
+    # trailing size field itself and the magic.
+    block_size = len(pair) + 8 + 16
     signing_block = (
         struct.pack("<Q", block_size) + pair + struct.pack("<Q", block_size) + APK_SIG_BLOCK_MAGIC
     )
 
-    new_cd_offset = cd_offset + len(signing_block)
-    new_eocd = bytearray(apk_data[eocd_offset:])
-    struct.pack_into("<I", new_eocd, 16, new_cd_offset)
+    new_eocd = bytearray(end_of_central_directory)
+    struct.pack_into("<I", new_eocd, 16, eocd.cd_offset + len(signing_block))
 
-    new_apk = section1 + signing_block + section2 + bytes(new_eocd)
-    Path(apk_path).write_bytes(new_apk)
+    Path(apk_path).write_bytes(contents + signing_block + central_directory + bytes(new_eocd))
 
 
-def _digest_section(data: bytes) -> bytes:
-    """v2 section digest: 1MB chunks, each prefixed with 0xa5 + u32 length."""
-    CHUNK = 1 << 20
-    chunks = []
-    for i in range(0, max(1, len(data)), CHUNK):
-        chunk = data[i : i + CHUNK]
-        prefix = b"\xa5" + struct.pack("<I", len(chunk))
-        chunks.append(hashlib.sha256(prefix + chunk).digest())
-    return hashlib.sha256(b"\x5a" + struct.pack("<I", len(chunks)) + b"".join(chunks)).digest()
+def _content_digest(*sections: bytes) -> bytes:
+    """The v2 CHUNKED_SHA256 digest.
 
+    Every section is split into 1 MB chunks and all the chunk digests go into a
+    *single* flat list — not one top-level digest per section.
+    """
+    chunk_digests = []
+    for section in sections:
+        for offset in range(0, len(section), _V2_CHUNK_SIZE):
+            chunk = section[offset : offset + _V2_CHUNK_SIZE]
+            prefix = _V2_CHUNK_PREFIX + struct.pack("<I", len(chunk))
+            chunk_digests.append(hashlib.sha256(prefix + chunk).digest())
 
-def _find_eocd(data: bytes | bytearray) -> int | None:
-    for i in range(len(data) - 22, max(len(data) - 65557, -1), -1):
-        if data[i : i + 4] == ZIP_EOCD_MAGIC:
-            comment_len = struct.unpack_from("<H", data, i + 20)[0]
-            if i + 22 + comment_len == len(data):
-                return i
-    return None
+    top = _V2_TOP_LEVEL_PREFIX + struct.pack("<I", len(chunk_digests)) + b"".join(chunk_digests)
+    return hashlib.sha256(top).digest()

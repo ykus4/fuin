@@ -1,16 +1,13 @@
-"""Pure-Python APK metadata extractor.
+"""Manifest inspection: package name, version, permissions, component counts.
 
-Parses AndroidManifest.xml (AXML binary) to extract package name, version,
-permissions, component counts and the DEX file list.
+Byte-level only, like the rest of :mod:`fuin.axml`. The APK-level wrapper that
+pulls the manifest out of a ZIP lives in :mod:`fuin.apk.info`.
 """
 
 import logging
-import os
-import zipfile
 
 from fuin.axml import reader as axml_mod
 from fuin.axml.constants import (
-    MANIFEST_NAME,
     RES_MIN_SDK,
     RES_NAME,
     RES_TARGET_SDK,
@@ -18,14 +15,17 @@ from fuin.axml.constants import (
     RES_VERSION_NAME,
     TYPE_STRING,
 )
-from fuin.axml.reader import fallback_package_name
-from fuin.contract import DEX_NAME_RE
 
 log = logging.getLogger(__name__)
 
 
-def _parse_manifest(axml: bytes) -> dict:
-    result: dict = {
+def empty_manifest_info() -> dict:
+    """The shape :func:`parse_manifest` always returns.
+
+    Callers index these keys unconditionally, so the failure paths have to
+    return them too rather than a differently-shaped error dict.
+    """
+    return {
         "package_name": "",
         "version_code": None,
         "version_name": None,
@@ -37,6 +37,15 @@ def _parse_manifest(axml: bytes) -> dict:
         "receivers": 0,
         "providers": 0,
     }
+
+
+def parse_manifest(axml: bytes) -> dict:
+    """Extract metadata from a binary AndroidManifest.xml.
+
+    Never raises on malformed input: an unparseable manifest yields the empty
+    shape rather than an exception, because the input is untrusted.
+    """
+    result: dict = empty_manifest_info()
 
     pos = axml_mod.body_offset(axml)
     if pos is None:
@@ -100,26 +109,3 @@ def _parse_manifest(axml: bytes) -> dict:
             result["providers"] += 1
 
     return result
-
-
-def get_apk_info(apk_path: str) -> dict:
-    """Return rich metadata dict for an APK."""
-    try:
-        with zipfile.ZipFile(apk_path, "r") as z:
-            names = z.namelist()
-            axml = z.read(MANIFEST_NAME)
-    except Exception as e:
-        log.warning("failed to read APK %s: %s", apk_path, e)
-        return {"package_name": "unknown", "error": str(e)}
-
-    info = _parse_manifest(axml)
-
-    info["dex_files"] = sorted(n for n in names if DEX_NAME_RE.match(n))
-    info["dex_count"] = len(info["dex_files"])
-    info["file_size_bytes"] = os.path.getsize(apk_path)
-    info["entry_count"] = len(names)
-
-    if not info["package_name"]:
-        info["package_name"] = fallback_package_name(axml)
-
-    return info

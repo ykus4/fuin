@@ -8,12 +8,7 @@ import zipfile
 from pathlib import Path
 from typing import TypedDict
 
-from fuin.contract import (
-    DEX_NAME_RE,
-    ENCRYPTED_LIBS_PREFIX,
-    ENCRYPTED_RES_PREFIX,
-    FUIN_INTERNAL_ASSETS,
-)
+from fuin.contract import DEX_NAME_RE, is_directory_entry, is_native_lib, is_user_asset
 
 
 class FileEntry(TypedDict):
@@ -41,18 +36,15 @@ def analyze_targets(apk_path: str) -> dict:
     with zipfile.ZipFile(apk_path, "r") as z:
         for info in z.infolist():
             name = info.filename
-            if name.endswith("/"):
+            if is_directory_entry(name):
                 continue
+            # The same predicates the encryptors use, so what `analyze` promises
+            # and what `pack` delivers cannot drift apart.
             if DEX_NAME_RE.match(name):
                 dex_files.append({"name": name, "size": info.file_size})
-            elif name.startswith("lib/") and name.endswith(".so"):
+            elif is_native_lib(name):
                 native_files.append({"name": name, "size": info.file_size})
-            elif (
-                name.startswith("assets/")
-                and name not in FUIN_INTERNAL_ASSETS
-                and not name.startswith(ENCRYPTED_LIBS_PREFIX)
-                and not name.startswith(ENCRYPTED_RES_PREFIX)
-            ):
+            elif is_user_asset(name):
                 asset_files.append({"name": name, "size": info.file_size})
 
     dex_total = sum(f["size"] for f in dex_files)

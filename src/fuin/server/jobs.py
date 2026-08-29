@@ -38,15 +38,47 @@ class Job:
     _queue: asyncio.Queue = field(default_factory=asyncio.Queue, repr=False)
 
     def push(self, event: dict) -> None:
+        """Queue an event. Only safe to call from the event loop's own thread."""
         self._queue.put_nowait(event)
 
+    def push_threadsafe(self, loop: asyncio.AbstractEventLoop, event: dict) -> None:
+        """Queue an event from a worker thread.
+
+        ``asyncio.Queue`` is not thread-safe: ``put_nowait`` resolves waiter
+        futures directly, so calling it off-loop races with the loop and leaves
+        the SSE consumer unwoken. The pack pipeline runs in an executor, so
+        every progress event arrives on the wrong thread.
+        """
+        loop.call_soon_threadsafe(self.push, event)
+
     async def stream(self):
-        """Async generator that yields events until the job finishes."""
+        """Async generator that yields events until the job finishes.
+
+        A subscriber that arrives after the job ended would otherwise wait on a
+        queue nothing will ever fill, so terminal state is replayed first.
+        """
+        if self.status in (JobStatus.done, JobStatus.error):
+            yield self.snapshot()
+            return
+
         while True:
             event = await self._queue.get()
             yield event
             if event.get("status") in (JobStatus.done, JobStatus.error):
                 break
+
+    def snapshot(self) -> dict[str, Any]:
+        """The job's current state as an SSE event."""
+        event: dict[str, Any] = {
+            "status": self.status,
+            "step": self.progress_step or self.status,
+            "pct": self.progress_pct,
+        }
+        if self.result is not None:
+            event["result"] = self.result
+        if self.error is not None:
+            event["error"] = self.error
+        return event
 
 
 _jobs: OrderedDict[str, Job] = OrderedDict()

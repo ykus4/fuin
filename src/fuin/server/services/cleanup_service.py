@@ -1,4 +1,4 @@
-"""Periodic / on-startup cleanup of stale packed APKs and job records."""
+"""On-startup cleanup of stale packed APKs and job records."""
 
 import logging
 
@@ -29,3 +29,14 @@ def cleanup_old_records(engine) -> int:
     if deleted:
         log.info("cleanup: deleted %d old packed apps", deleted)
     return deleted
+
+
+def fail_stranded_jobs(engine) -> int:
+    """Fail jobs left running by a previous process. Returns the row count."""
+    with Session(engine) as session:
+        stranded = JobRepository(session).fail_unfinished("server restarted while packing")
+        session.commit()
+
+    if stranded:
+        log.warning("marked %d job(s) as failed: no worker survived the restart", stranded)
+    return stranded
