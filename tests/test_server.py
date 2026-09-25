@@ -225,3 +225,31 @@ def _await_terminal(client, job_id: str, timeout: float = 60.0) -> dict:
             return payload
         time.sleep(0.02)
     raise AssertionError(f"job {job_id} never finished: {payload}")
+
+
+def test_mapping_limit_preserves_previous_upload(client, monkeypatch):
+    from sqlalchemy.orm import Session
+
+    from fuin.server.database import App
+
+    with Session(deps.get_engine()) as session:
+        entry = App(package_name="com.example.test", apk_signature="test")
+        session.add(entry)
+        session.commit()
+        app_id = entry.app_id
+
+    monkeypatch.setenv("FUIN_MAX_MAPPING_MB", "1")
+    url = f"/apps/{app_id}/mapping"
+    headers = {"X-API-Key": API_KEY}
+    original = b"x" * (1024 * 1024)
+    response = client.post(
+        f"{url}/upload", files={"file": ("mapping.txt", original)}, headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["size_bytes"] == len(original)
+
+    response = client.post(
+        f"{url}/upload", files={"file": ("mapping.txt", original + b"x")}, headers=headers
+    )
+    assert response.status_code == 413
+    assert client.get(url, headers=headers).content == original

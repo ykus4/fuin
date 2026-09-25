@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 
 from fuin.server.config import get_server_settings
 from fuin.server.deps import Apps, CurrentApp, verify_api_key
+from fuin.server.routers.uploads import read_upload
 from fuin.server.schemas import AppInfo, MappingUploaded, StatusResponse
 
 log = logging.getLogger(__name__)
@@ -50,12 +51,7 @@ def download_packed_apk(entry: CurrentApp):
 @router.post("/{app_id}/mapping/upload", response_model=MappingUploaded)
 async def upload_mapping(entry: CurrentApp, apps: Apps, file: UploadFile = File(...)):
     settings = get_server_settings()
-    content = await file.read()
-    if len(content) > settings.max_mapping_bytes:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Mapping file too large (max {settings.max_mapping_bytes // (1024 * 1024)} MB)",
-        )
+    content = await read_upload(file, max_bytes=settings.max_mapping_bytes, label="Mapping file")
 
     mapping_dir = Path(settings.packed_apk_dir) / "mappings"
     mapping_dir.mkdir(parents=True, exist_ok=True)

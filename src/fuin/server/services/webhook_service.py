@@ -48,14 +48,9 @@ def _resolves_to_a_public_address(host: str) -> bool:
 
     for info in infos:
         address = ipaddress.ip_address(info[4][0])
-        if (
-            address.is_private
-            or address.is_loopback
-            or address.is_link_local
-            or address.is_reserved
-            or address.is_multicast
-            or address.is_unspecified
-        ):
+        # is_global already excludes loopback, link-local, reserved, unspecified
+        # and private ranges; some multicast ranges still count as global.
+        if not address.is_global or address.is_multicast:
             log.warning("refusing webhook to %s: %s is not a public address", host, address)
             return False
     return True
@@ -63,14 +58,20 @@ def _resolves_to_a_public_address(host: str) -> bool:
 
 def is_safe_url(url: str) -> bool:
     """Whether ``url`` is a webhook target fuin is willing to call."""
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+        # Accessing port validates non-numeric and out-of-range values.
+        _ = parts.port
+    except ValueError:
+        return False
     allowed = _ALLOWED_SCHEMES | ({"http"} if _plain_http_allowed() else frozenset())
     if parts.scheme not in allowed:
         log.warning("refusing webhook to %s: scheme %r not allowed", url, parts.scheme)
         return False
-    if not parts.hostname:
+    if not host:
         return False
-    return _resolves_to_a_public_address(parts.hostname)
+    return _resolves_to_a_public_address(host)
 
 
 def parse_urls(*sources: str) -> list[str]:

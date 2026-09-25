@@ -1,4 +1,4 @@
-"""Upload validation shared by the /analyze and /pack routes."""
+"""Bounded upload reading and APK validation."""
 
 import logging
 
@@ -24,13 +24,6 @@ def ensure_valid_apk(apk_bytes: bytes, *, filename: str | None) -> None:
         )
 
 
-def _too_large(limit: int) -> HTTPException:
-    return HTTPException(
-        status_code=413,
-        detail=f"APK too large (limit: {limit // (1024 * 1024)} MB)",
-    )
-
-
 async def read_apk_upload(file: UploadFile, *, max_bytes: int | None = None) -> bytes:
     """Read an uploaded APK, enforcing the size limit as it is read.
 
@@ -40,14 +33,25 @@ async def read_apk_upload(file: UploadFile, *, max_bytes: int | None = None) -> 
     """
     limit = get_server_settings().max_upload_bytes if max_bytes is None else max_bytes
 
-    chunks: list[bytes] = []
-    total = 0
-    while chunk := await file.read(_CHUNK_SIZE):
-        total += len(chunk)
-        if total > limit:
-            raise _too_large(limit)
-        chunks.append(chunk)
-
-    apk_bytes = b"".join(chunks)
+    apk_bytes = await read_upload(file, max_bytes=limit, label="APK")
     ensure_valid_apk(apk_bytes, filename=file.filename)
     return apk_bytes
+
+
+async def read_upload(file: UploadFile, *, max_bytes: int, label: str) -> bytes:
+    """Read an upload, rejecting it with a 413 once it exceeds ``max_bytes``.
+
+    Never reads more than one byte past the limit, so an oversized body is
+    detected without buffering the rest of it.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await file.read(min(_CHUNK_SIZE, max_bytes - total + 1)):
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"{label} too large (limit: {max_bytes // (1024 * 1024)} MB)",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)

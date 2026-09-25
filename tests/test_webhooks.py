@@ -68,3 +68,19 @@ def test_parse_urls_drops_unsafe_targets_and_keeps_order():
 
 def test_parse_urls_handles_empty_sources():
     assert parse_urls("", "") == []
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://[::1",
+        "https://[invalid]/hook",
+        "https://93.184.216.34:invalid/hook",
+        "https://93.184.216.34:65536/hook",
+        "https://93.184.216.34:-1/hook",
+        "https://100.64.0.1/hook",  # shared carrier network, not publicly routable
+    ],
+)
+def test_malformed_and_non_public_targets_are_dropped(url):
+    assert is_safe_url(url) is False
+    assert parse_urls(url, "https://93.184.216.34/hook") == ["https://93.184.216.34/hook"]
