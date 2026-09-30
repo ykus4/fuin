@@ -1,5 +1,5 @@
 plugins {
-    kotlin("jvm") version "2.4.10"
+    kotlin("jvm") version "2.4.20"
     `java-gradle-plugin`
     `maven-publish`
 }
@@ -13,8 +13,8 @@ repositories {
 
 dependencies {
     implementation(gradleApi())
-    implementation("com.squareup.okhttp3:okhttp:5.4.0")
-    implementation("org.json:json:20260719")
+    implementation("com.squareup.okhttp3:okhttp:5.5.0")
+    implementation("org.json:json:20260814")
 }
 
 gradlePlugin {
